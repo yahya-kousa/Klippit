@@ -74,6 +74,8 @@ int main(int argc, char **argv)
     for (const auto &candidate : candidates) {
         args = input + QStringList{"-c:v", candidate, "-b:v", QString::number(bitrate) + "M",
                                   "-g", QString::number(fps), "-fps_mode", "passthrough"};
+        // Preserve desktop capture timing between nominal frame ticks.
+        if (candidate == "h264_nvenc") args << "-enc_time_base" << "demux";
         if (run(args + QStringList{"-frames:v", "1", "-f", "null", "-"}, 10000)) {
             encoder = candidate;
             break;
