@@ -4,6 +4,23 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets Multimedia MultimediaWidgets)
 qt_standard_project_setup()
-qt_add_executable(klippit src/main.cpp)
+qt_add_executable(klippit
+    src/main.cpp
+    src/Editor.h src/Editor.cpp
+    src/Timeline.h src/Timeline.cpp
+    src/ClipExporter.h src/ClipExporter.cpp
+)
 target_link_libraries(klippit PRIVATE Qt6::Widgets Qt6::Multimedia Qt6::MultimediaWidgets)
 set_target_properties(klippit PROPERTIES WIN32_EXECUTABLE TRUE)
+
+option(BUILD_TESTING "Build the Klippit regression tests" OFF)
+include(CTest)
+if(BUILD_TESTING)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_executable(export_trim_test tests/export_trim.cpp src/ClipExporter.cpp src/ClipExporter.h)
+    target_include_directories(export_trim_test PRIVATE src)
+    target_link_libraries(export_trim_test PRIVATE Qt6::Core)
+    add_test(NAME lossless_trim COMMAND Python3::Interpreter
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_trim.py" $<TARGET_FILE:export_trim_test>)
+    set_tests_properties(lossless_trim PROPERTIES TIMEOUT 90)
+endif()

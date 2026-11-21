@@ -37,6 +37,18 @@ If CMake cannot find Qt, add `-DCMAKE_PREFIX_PATH="<Qt kit directory>"` to the c
 
 Run `./build/klippit` on Linux or `.\build\klippit.exe` in Windows PowerShell. On macOS, open the generated app bundle if your Qt kit produces one, or run `./build/klippit`.
 
+## Run the trim regression test
+
+With Python 3, ffmpeg, and ffprobe available, enable the test from the repository root:
+
+```sh
+cmake -S . -B build -DBUILD_TESTING=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+The test generates a temporary 60 FPS recording with two audio tracks, runs the range calculation and exporter used by the editor, and compares MP4 and MKV exports against the source. It runs without opening a window.
+
 ## Project status
 
 Klippit is an early single-range editor for existing recordings. Edits last until you open another recording or quit. Background replay capture is planned.
