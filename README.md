@@ -54,3 +54,12 @@ The test generates a temporary 60 FPS recording with two audio tracks, runs the 
 Klippit is an early single-range editor for existing recordings. Edits last until you open another recording or quit. Background replay capture is planned.
 
 The editor and export workflow have been tested on CachyOS with a 1440p Overwatch recording. All 300 decoded frames in a five-second export matched the corresponding source frames, and the AAC packet payloads matched the source. Windows and macOS GUI builds still need verification.
+
+## Experimental Windows recorder
+
+A separate command-line target captures a short video-only desktop recording. The [recording benchmark](benchmarks/README.md) covers building it, inspecting the saved clip, and comparing game frame times across recorders. Windows gameplay and encoder compatibility still need hardware validation.
+
+## Third-party acknowledgments
+
+- Klippit uses Qt 6. Qt Core handles process management, Qt Widgets provides the editor interface, and Qt Multimedia and Multimedia Widgets handle audio and video preview. [Qt licensing](https://doc.qt.io/qt-6/licensing.html)
+- Klippit invokes FFmpeg and ffprobe for keyframe indexing, stream-copy exports, and experimental Windows recording. [FFmpeg licensing](https://ffmpeg.org/legal.html)

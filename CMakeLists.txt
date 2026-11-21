@@ -23,4 +23,12 @@ if(BUILD_TESTING)
     add_test(NAME lossless_trim COMMAND Python3::Interpreter
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_trim.py" $<TARGET_FILE:export_trim_test>)
     set_tests_properties(lossless_trim PROPERTIES TIMEOUT 90)
+    add_test(NAME recording_metrics COMMAND Python3::Interpreter
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_recording_metrics.py")
+    set_tests_properties(recording_metrics PROPERTIES TIMEOUT 30)
+endif()
+
+if(WIN32)
+    add_executable(klippit-record src/recorder/main.cpp)
+    target_link_libraries(klippit-record PRIVATE Qt6::Core)
 endif()
