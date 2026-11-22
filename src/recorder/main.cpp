@@ -32,13 +32,24 @@ static bool run(const QStringList &args, int timeoutMs, bool desktop = false)
         qWarning("FFmpeg exceeded the recording timeout.");
         return false;
     }
-    if (desktop && helper.state() != QProcess::NotRunning && !helper.waitForFinished(1000)) {
-        helper.kill();
-        helper.waitForFinished();
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        QTextStream(stderr) << "FFmpeg failed with exit code " << process.exitCode() << Qt::endl;
         return false;
     }
-    if (desktop && (helper.exitStatus() != QProcess::NormalExit || helper.exitCode() != 0)) return false;
-    return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+    if (!desktop) return true;
+    if (helper.state() != QProcess::NotRunning && !helper.waitForFinished(1000) &&
+        helper.state() != QProcess::NotRunning && helper.error() == QProcess::Timedout) {
+        // The helper streams indefinitely. FFmpeg already finalized the timed recording.
+        helper.kill();
+        if (helper.waitForFinished()) return true;
+        QTextStream(stderr) << "Could not stop desktop audio helper: " << helper.errorString() << Qt::endl;
+        return false;
+    }
+    if (helper.exitStatus() != QProcess::NormalExit || helper.exitCode() != 0) {
+        QTextStream(stderr) << "Desktop audio helper failed with exit code " << helper.exitCode() << Qt::endl;
+        return false;
+    }
+    return true;
 }
 
 int main(int argc, char **argv)
@@ -138,7 +149,11 @@ int main(int argc, char **argv)
     args = inputs + args;
     if (cli.isSet("replay")) return recordReplay(args, output.absoluteFilePath(), desktop);
     QTemporaryDir staging(output.dir().filePath(".klippit-record-XXXXXX"));
-    if (!staging.isValid()) return 1;
+    if (!staging.isValid()) {
+        QTextStream(stderr) << "Cannot stage recording in " << output.absolutePath()
+                            << ": " << staging.errorString() << Qt::endl;
+        return 1;
+    }
     const QString clip = staging.filePath("recording.mkv");
     QElapsedTimer timer;
     timer.start();
