@@ -46,4 +46,5 @@ protected:
 public:
     Editor();
     void showClipQueue();
+    void showAndActivate();
 };

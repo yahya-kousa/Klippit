@@ -129,11 +129,7 @@ void ReplayTray::stop()
 
 void ReplayTray::showEditor()
 {
-    if (quitting) return;
-    if (editor.isMinimized()) editor.showNormal();
-    else editor.show();
-    editor.raise();
-    editor.activateWindow();
+    if (!quitting) editor.showAndActivate();
 }
 
 void ReplayTray::setStatus(const QString &message)

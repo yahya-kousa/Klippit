@@ -214,6 +214,16 @@ void Editor::closeEvent(QCloseEvent *event)
     } else QWidget::closeEvent(event);
 }
 
+void Editor::showAndActivate()
+{
+    if (isMinimized()) showNormal();
+    else show();
+    auto *window = QApplication::activeModalWidget();
+    if (!window) window = this;
+    window->raise();
+    window->activateWindow();
+}
+
 Editor::Editor()
     : timeline(new TimelineSlider),
       markers(new ClipMarkers(timeline)),
