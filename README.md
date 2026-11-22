@@ -57,7 +57,7 @@ The editor and export workflow have been tested on CachyOS with a 1440p Overwatc
 
 ## Experimental Windows recorder
 
-A separate command-line target supports a 15-second recording or a video-only RAM replay buffer with global save and stop hotkeys. The [recording benchmark](benchmarks/README.md) covers building it, inspecting the saved clip, and comparing game frame times across recorders. Windows gameplay and encoder compatibility still need hardware validation.
+A separate command-line target supports a 15-second recording or a RAM replay buffer with optional game audio and global save and stop hotkeys. The [recording benchmark](benchmarks/README.md) covers building it, inspecting the saved clip, and comparing game frame times across recorders. Windows gameplay and encoder compatibility still need hardware validation.
 
 ## Third-party acknowledgments
 

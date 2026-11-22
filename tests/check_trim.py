@@ -41,7 +41,7 @@ def check(directory):
     assert len(expected) == 300
     for fmt in ("mp4", "mkv"):
         out = directory / f"trim.{fmt}"
-        subprocess.run([sys.argv[1], source, out, fmt, *keys], check=True)
+        subprocess.run([sys.argv[1], source, out, fmt, "5500000", *keys], check=True)
         assert frames(out) == expected, f"{fmt}: decoded frames differ from source frames 330–629"
         for track in ("a:0", "a:1"):
             before = [p["data_hash"] for p in packets(source, track)]

@@ -8,7 +8,7 @@
 #include <utility>
 
 namespace {
-// The capture muxer emits a single track, with tfdt nested in moof/traf.
+// Video is mapped first. Use the first traf (video clock) for each keyframe-aligned fragment.
 std::optional<qint64> decodeTime(QByteArrayView boxes)
 {
     while (boxes.size() >= 8) {
@@ -106,7 +106,7 @@ void Replay::save()
         }, Qt::SingleShotConnection);
     writer.setProcessChannelMode(QProcess::ForwardedErrorChannel);
     writer.start("ffmpeg", {"-nostdin","-v","error","-f","mp4","-i","pipe:0",
-                            "-map","0:v:0","-c","copy",temp});
+                            "-map","0:v:0","-map","0:a?","-c","copy",temp});
     if (!writer.waitForStarted()) {
         QObject::disconnect(connection);
         QDir().rmdir(dir);

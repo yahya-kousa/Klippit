@@ -36,11 +36,12 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
     QCommandLineParser cli;
-    cli.setApplicationDescription("Record 15 seconds of one Windows display to a new video-only MKV.");
+    cli.setApplicationDescription("Record 15 seconds of one Windows display to a new MKV.");
     cli.addHelpOption();
     cli.addPositionalArgument("output.mkv", "New output file");
     cli.addOptions({
         {"replay", "Keep recent encoded video in RAM (Ctrl+Shift+F9 saves, Ctrl+Shift+End or console Q stops)."},
+        {"audio-device", "Capture sound from the named Windows DirectShow recording device.", "name"},
         {"encoder", "auto, h264_nvenc, h264_amf, or h264_qsv", "name", "auto"},
         {"display", "DXGI output index", "index", "0"},
         {"fps", "Capture rate in frames per second (1-240)", "fps", "60"},
@@ -70,15 +71,15 @@ int main(int argc, char **argv)
     const QString capture = QString("ddagrab=output_idx=%1:framerate=%2:dup_frames=1")
                                 .arg(display).arg(fps);
     const QStringList input{"-nostdin", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
-                            "-i", capture, "-an"};
+                            "-i", capture};
     QString encoder;
     QStringList args;
     for (const auto &candidate : candidates) {
-        args = input + QStringList{"-c:v", candidate, "-b:v", QString::number(bitrate) + "M",
-                                  "-g", QString::number(fps), "-fps_mode", "passthrough"};
+        args = QStringList{"-c:v", candidate, "-b:v", QString::number(bitrate) + "M",
+                                  "-g", QString::number(fps), "-fps_mode:v", "passthrough"};
         // Preserve desktop capture timing between nominal frame ticks.
-        if (candidate == "h264_nvenc") args << "-enc_time_base" << "demux";
-        if (run(args + QStringList{"-frames:v", "1", "-f", "null", "-"}, 10000)) {
+        if (candidate == "h264_nvenc") args << "-enc_time_base:v" << "demux";
+        if (run(input + args + QStringList{"-frames:v", "1", "-f", "null", "-"}, 10000)) {
             encoder = candidate;
             break;
         }
@@ -87,6 +88,17 @@ int main(int argc, char **argv)
         qWarning("No tested encoder could capture this display. Check the display index, graphics driver and FFmpeg build.");
         return 1;
     }
+    const QString audioDevice = cli.value("audio-device");
+    QStringList inputs = input;
+    if (cli.isSet("audio-device")) {
+        if (audioDevice.trimmed().isEmpty()) cli.showHelp(2);
+        inputs << "-f" << "dshow" << "-i" << "audio=" + audioDevice;
+        inputs << "-map" << "0:v:0" << "-map" << "1:a:0";
+        args << "-c:a" << "aac" << "-ar" << "48000" << "-ac" << "2" << "-b:a" << "192k";
+    } else {
+        args << "-an";
+    }
+    args = inputs + args;
     if (cli.isSet("replay")) return recordReplay(args, output.absoluteFilePath());
     QTemporaryDir staging(output.dir().filePath(".klippit-record-XXXXXX"));
     if (!staging.isValid()) return 1;
@@ -100,7 +112,7 @@ int main(int argc, char **argv)
         return 1;
     }
     const QJsonObject result{{"platform", QSysInfo::prettyProductName()}, {"file", output.absoluteFilePath()},
-        {"capture", capture}, {"encoder", encoder}, {"target_mbps", bitrate}, {"target_fps", fps},
+        {"audio_device", audioDevice}, {"capture", capture}, {"encoder", encoder}, {"target_mbps", bitrate}, {"target_fps", fps},
         {"requested_seconds", 15}, {"record_and_finalize_ms", timer.elapsed()}};
     QTextStream(stdout) << QJsonDocument(result).toJson();
     return 0;

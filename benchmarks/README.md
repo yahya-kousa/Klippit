@@ -46,3 +46,21 @@ py -3 benchmarks/measure_replay.py "$env:TEMP/klippit-replay-run-01"
 Use a new directory for each run. The default command uses the existing build-x64 recorder and pins NVENC at 60 fps and 30 Mbit/s. Select another supported encoder with --encoder. Warm up for 30 seconds, save five times at least five seconds apart with Ctrl+Shift+F9, then stop with Ctrl+Shift+End. Keep the game in the foreground and record the scene, resolution, GPU and driver alongside the reports.
 
 summary.json contains each successful request-to-file-publication latency, its median, and sampled working-set peaks in bytes. Divide by 1,048,576 for MiB. memory.csv retains per-process samples for the recorder and its children. The sampler targets 100 ms and can miss brief peaks. Shared pages may be counted across processes. Per-save windows are estimated from receipt of the completion message and the recorder's own elapsed time. A null peak means no sample fell in that window. recorder.log retains the timing messages. This run measures recorder memory and save latency; use the separate PresentMon procedure for game frame times.
+
+## Game audio trial on Windows
+
+To test Klippit with sound, list DirectShow recording endpoints:
+
+```powershell
+ffmpeg -hide_banner -list_devices true -f dshow -i dummy
+```
+
+Choose a playback-loopback endpoint (often named Stereo Mix) that carries the game's output. Pass its exact listed name to the rebuilt recorder, for example:
+
+```powershell
+.\build-x64\klippit-record.exe --replay --audio-device "Stereo Mix (Realtek(R) Audio)" audio-trial.mkv
+```
+
+The endpoint is driver-dependent; a microphone captures room sound. If the list has no playback-loopback endpoint for the active output, this version needs an enabled or routed loopback recording device. Omitting the option uses the video-only baseline. The benchmark runner accepts the same --audio-device option.
+
+Save twice during a visible action with a distinct sound, such as firing a weapon. Open both clips, check sound alignment at the beginning and end, then trim and reopen one export. Record the endpoint and audio encoding settings (stereo AAC, 48 kHz, 192 kbit/s) before repeating the performance trials.

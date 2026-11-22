@@ -16,11 +16,13 @@ import time
 import psutil
 
 
-def measure(executable, directory, encoder):
+def measure(executable, directory, encoder, audio_device=None):
     directory.mkdir(parents=True, exist_ok=False)
     clip = directory.resolve() / "replay.mkv"
     command = [str(executable.resolve()), "--replay", "--fps", "60", "--bitrate", "30",
                "--encoder", encoder, str(clip)]
+    if audio_device:
+        command.extend(["--audio-device", audio_device])
     metadata = {
         "command": command, "platform": platform.platform(), "psutil": psutil.__version__,
         "executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
@@ -117,6 +119,7 @@ if __name__ == "__main__":
     parser.add_argument("--recorder", type=Path, default=Path("build-x64/klippit-record.exe"))
     parser.add_argument("--encoder", default="h264_nvenc",
                         choices=["h264_nvenc", "h264_amf", "h264_qsv"])
+    parser.add_argument("--audio-device", help="Windows recording endpoint used for game audio")
     parser.add_argument("--recover", action="store_true", help="summarize an earlier run's raw files")
     args = parser.parse_args()
     if args.recover:
@@ -126,4 +129,4 @@ if __name__ == "__main__":
         sys.exit(0)
     if args.directory.exists() or not args.recorder.is_file():
         parser.error("Choose a new run directory and an existing recorder executable.")
-    sys.exit(measure(args.recorder, args.directory, args.encoder))
+    sys.exit(measure(args.recorder, args.directory, args.encoder, args.audio_device))

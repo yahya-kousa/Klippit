@@ -8,13 +8,14 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
     const auto args = app.arguments();
-    if (args.size() < 5) return 1;
+    if (args.size() < 6) return 1;
     std::vector<qint64> keys;
-    for (const auto &key : args.mid(4)) keys.push_back(key.toLongLong());
+    for (const auto &key : args.mid(5)) keys.push_back(key.toLongLong());
 
     const auto range = losslessRange(keys, 5800, 10500);
-    if (!range || range->startUs != 5500000 || range->durationUs != 5000000) {
-        qCritical() << "Expected the requested trim to resolve to 5.500 through 10.500 seconds";
+    const qint64 expectedStart = args[4].toLongLong();
+    if (!range || range->startUs != expectedStart || range->durationUs != 10500000 - expectedStart) {
+        qCritical() << "Unexpected effective trim range";
         return 1;
     }
     ClipExporter exporter;

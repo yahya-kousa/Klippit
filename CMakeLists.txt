@@ -27,7 +27,7 @@ if(BUILD_TESTING)
     target_include_directories(replay_buffer_test PRIVATE src/recorder)
     target_link_libraries(replay_buffer_test PRIVATE Qt6::Core)
     add_test(NAME replay_buffer COMMAND Python3::Interpreter -B
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_replay.py" $<TARGET_FILE:replay_buffer_test>)
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_replay.py" $<TARGET_FILE:replay_buffer_test> $<TARGET_FILE:export_trim_test>)
     set_tests_properties(replay_buffer PROPERTIES TIMEOUT 60)
     add_test(NAME recording_metrics COMMAND Python3::Interpreter
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_recording_metrics.py")
