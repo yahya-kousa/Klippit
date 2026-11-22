@@ -117,8 +117,11 @@ int main(int argc, char **argv)
             if (audioDevice.trimmed().isEmpty()) cli.showHelp(2);
             inputs << "-f" << "dshow" << "-i" << "audio=" + audioDevice;
         }
-        if (mic) inputs << "-f" << "dshow"
-                        << "-i" << "audio=" + cli.value("mic");
+        if (mic) {
+            // Request smaller mic batches so the live mix receives audio regularly.
+            inputs << "-f" << "dshow" << "-audio_buffer_size" << "50"
+                   << "-i" << "audio=" + cli.value("mic");
+        }
         inputs << "-map" << "0:v:0";
         if (mic && !separate) {
             inputs << "-filter_complex" << "[1:a]aformat=channel_layouts=stereo[d];[2:a]aformat=channel_layouts=stereo[m];"
