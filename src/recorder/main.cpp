@@ -1,3 +1,4 @@
+#include "Replay.h"
 #include <QCommandLineParser>
 #include <QCoreApplication>
 #include <QDir>
@@ -39,6 +40,7 @@ int main(int argc, char **argv)
     cli.addHelpOption();
     cli.addPositionalArgument("output.mkv", "New output file");
     cli.addOptions({
+        {"replay", "Keep recent encoded video in RAM (Ctrl+Shift+F9 saves, Ctrl+Shift+F10 stops)."},
         {"encoder", "auto, h264_nvenc, h264_amf, or h264_qsv", "name", "auto"},
         {"display", "DXGI output index", "index", "0"},
         {"fps", "Capture rate in frames per second (1-240)", "fps", "60"},
@@ -85,6 +87,7 @@ int main(int argc, char **argv)
         qWarning("No tested encoder could capture this display. Check the display index, graphics driver and FFmpeg build.");
         return 1;
     }
+    if (cli.isSet("replay")) return recordReplay(args, output.absoluteFilePath());
     QTemporaryDir staging(output.dir().filePath(".klippit-record-XXXXXX"));
     if (!staging.isValid()) return 1;
     const QString clip = staging.filePath("recording.mkv");

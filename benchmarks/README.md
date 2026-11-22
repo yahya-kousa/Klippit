@@ -19,3 +19,18 @@ Auto selection tries h264_nvenc, h264_amf, and h264_qsv. Use `--encoder` to pin 
 3. Capture **game** frame times with PresentMon targeting the game process for every condition, including the baseline. Keep the raw CSVs. Compare median and 99th-percentile frame times per run, then report the median and range across runs. For memory comparisons, sample the recorder and its worker processes, including FFmpeg, at a fixed interval and record the memory counter and sampling rate. [PresentMon](https://github.com/GameTechDev/PresentMon)
 4. After each trial, run the clip inspector on the saved media from either recorder. It decodes the first video stream and reports frame count, presentation timestamp intervals, and how often a gap exceeded 1.5 target frame periods. A fixed-rate recorder can repeat images while producing perfectly spaced timestamps. These counts describe the saved file and cannot establish dropped game frames or unique captured images.
 5. Keep the raw reports with the hardware and workload notes. For a public or résumé claim, give the measured value, comparison baseline, units, trial count, and test configuration. Disk recording here measures continuous capture. Rolling-buffer save latency needs a later experiment once that feature exists.
+
+## RAM replay mode (experimental)
+
+Build the updated Windows recorder and run it from the project directory:
+
+```powershell
+cmake --build build-x64 --target klippit-record
+.\build-x64\klippit-record.exe --replay --display 0 --fps 60 --bitrate 30 replay-01.mkv
+```
+
+Choose a fresh filename. With the game in the foreground, press **Ctrl+Shift+F9** to save and **Ctrl+Shift+F10** to stop. Later saves receive timestamped filenames. The console reports elapsed milliseconds from the save request through publication. One save runs at a time.
+
+FFmpeg encodes continuously and sends keyframe-aligned fragments through a pipe. Klippit retains roughly 15 seconds plus keyframe alignment, subject to a 96 MiB encoded-history cap. A save includes the fragment in progress when you pressed the key, so publication can wait about one keyframe interval. Only requested saves are written to disk. A second FFmpeg process stream-copies the snapshot to MKV. Snapshot data, incoming fragments, process buffers and encoder memory are additional to the history cap.
+
+For a hardware smoke test, play for 30 seconds, save during motion, keep playing, and save again five seconds later. Check both clips in the trimmer and record save latency and peak memory including both FFmpeg processes. The automated replay_buffer test checks time and byte eviction and consecutive decoded frames on synthetic input.

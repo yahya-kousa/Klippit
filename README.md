@@ -51,13 +51,13 @@ The test generates a temporary 60 FPS recording with two audio tracks, runs the 
 
 ## Project status
 
-Klippit is an early single-range editor for existing recordings. Edits last until you open another recording or quit. Background replay capture is planned.
+Klippit is an early single-range editor for existing recordings. Edits last until you open another recording or quit. The experimental Windows recorder can retain recent video in RAM and save it with a hotkey.
 
 The editor and export workflow have been tested on CachyOS with a 1440p Overwatch recording. All 300 decoded frames in a five-second export matched the corresponding source frames, and the AAC packet payloads matched the source. Windows and macOS GUI builds still need verification.
 
 ## Experimental Windows recorder
 
-A separate command-line target captures a short video-only desktop recording. The [recording benchmark](benchmarks/README.md) covers building it, inspecting the saved clip, and comparing game frame times across recorders. Windows gameplay and encoder compatibility still need hardware validation.
+A separate command-line target supports a 15-second recording or a video-only RAM replay buffer with global save and stop hotkeys. The [recording benchmark](benchmarks/README.md) covers building it, inspecting the saved clip, and comparing game frame times across recorders. Windows gameplay and encoder compatibility still need hardware validation.
 
 ## Third-party acknowledgments
 
