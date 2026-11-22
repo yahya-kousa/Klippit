@@ -1,10 +1,14 @@
 #include "Replay.h"
 #include "ReplayBuffer.h"
 #include "Loopback.h"
+#include "ReplayHotkey.h"
 
 #include <QCoreApplication>
 #include <QDebug>
 #include <QElapsedTimer>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QScopeGuard>
 #include <QTimer>
 #include <QTextStream>
 
@@ -16,8 +20,28 @@
 #include <cstdio>
 #endif
 
-int recordReplay(QStringList args, const QString &firstPath, bool desktop, int historySeconds, qint64 bufferBytes, bool managed)
+int recordReplay(QStringList args, const QString &firstPath, bool desktop, int historySeconds, qint64 bufferBytes, bool managed, const QString &saveHotkey)
 {
+#ifdef Q_OS_WIN
+    const auto hotkey = parseReplayHotkey(saveHotkey);
+    if (!hotkey) return 2;
+    UINT modifiers = MOD_NOREPEAT;
+    if (hotkey->modifiers & ReplayHotkey::Ctrl) modifiers |= MOD_CONTROL;
+    if (hotkey->modifiers & ReplayHotkey::Alt) modifiers |= MOD_ALT;
+    if (hotkey->modifiers & ReplayHotkey::Shift) modifiers |= MOD_SHIFT;
+    if (!RegisterHotKey(nullptr, 1, modifiers, hotkey->key)) {
+        const DWORD error = GetLastError();
+        QTextStream(stderr) << "Could not register save hotkey " << saveHotkey
+                            << ". Choose another shortcut. Windows error " << error << Qt::endl;
+        return 1;
+    }
+    const auto releaseSave = qScopeGuard([] { UnregisterHotKey(nullptr, 1); });
+    if (!RegisterHotKey(nullptr, 2, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_END)) {
+        QTextStream(stderr) << "Could not register stop hotkey Ctrl+Shift+End." << Qt::endl;
+        return 1;
+    }
+    const auto releaseStop = qScopeGuard([] { UnregisterHotKey(nullptr, 2); });
+#endif
     Replay replay(firstPath, bufferBytes, historySeconds);
     QProcess capture;
     bool valid = true;
@@ -34,17 +58,8 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
     if (!startCapture(capture, args, desktop ? &helper : nullptr)) return 1;
     QTimer controls;
     bool readyReported = false;
-#ifdef Q_OS_WIN
-    if (!RegisterHotKey(nullptr, 1, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_F9) ||
-        !RegisterHotKey(nullptr, 2, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_END)) {
-        qWarning("Could not register replay hotkeys");
-        capture.kill();
-        capture.waitForFinished();
-        UnregisterHotKey(nullptr, 1);
-        return 1;
-    }
-#endif
-    qInfo("Replay active: Ctrl+Shift+F9 saves, Ctrl+Shift+End stops. You can also press Q in this console.");
+    qInfo().noquote() << QString("Replay active: %1 saves, Ctrl+Shift+End stops.").arg(saveHotkey);
+    if (!managed) qInfo("You can also press Q in this console.");
     bool stopping = false;
     bool stoppedCapture = false;
     QElapsedTimer stopWait;
@@ -72,7 +87,8 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
         if (managed && !stopping && valid && !readyReported && replay.hasHistory() &&
             capture.state() == QProcess::Running) {
             readyReported = true;
-            QTextStream(stdout) << R"({"event":"replay_ready"})" << Qt::endl;
+            const QJsonObject event{{"event", "replay_ready"}, {"save_hotkey", saveHotkey}};
+            QTextStream(stdout) << QJsonDocument(event).toJson(QJsonDocument::Compact) << Qt::endl;
         }
         if (desktop && !stopping && helper.state() == QProcess::NotRunning &&
             (helper.exitStatus() != QProcess::NormalExit || helper.exitCode() != 0)) {
@@ -122,8 +138,6 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
     const int result = QCoreApplication::exec();
 #ifdef Q_OS_WIN
     QCoreApplication::instance()->removeNativeEventFilter(&keys);
-    UnregisterHotKey(nullptr, 1);
-    UnregisterHotKey(nullptr, 2);
 #endif
     if (desktop && helper.state() != QProcess::NotRunning && !helper.waitForFinished(1000)) {
         helper.kill();

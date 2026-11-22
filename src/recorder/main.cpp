@@ -1,4 +1,5 @@
 #include "Replay.h"
+#include "ReplayHotkey.h"
 #include "Loopback.h"
 #include <QCommandLineParser>
 #include <QCoreApplication>
@@ -56,9 +57,10 @@ int main(int argc, char **argv)
     cli.addHelpOption();
     cli.addPositionalArgument("output.mkv", "New output file");
     cli.addOptions({
+        {"save-hotkey", "Global save shortcut such as Ctrl+Shift+F9", "shortcut", defaultReplayHotkey},
         {"history", "Replay history in seconds (1-300)", "seconds", "15"},
         {"buffer-mib", "Encoded replay history memory limit (1-2048 MiB)", "MiB"},
-        {"replay", "Keep recent encoded video in RAM (Ctrl+Shift+F9 saves, Ctrl+Shift+End or console Q stops)."},
+        {"replay", "Keep recent encoded video in RAM (configurable shortcut saves, Ctrl+Shift+End or console Q stops)."},
         {"desktop-audio", "Capture the default Windows playback device."},
         {"mic", "Include this DirectShow microphone along with desktop audio.", "device"},
         {"separate-mic", "Store desktop and microphone on separate tracks."},
@@ -75,10 +77,16 @@ int main(int argc, char **argv)
     const int history = cli.value("history").toInt();
     const int configuredMiB = cli.value("buffer-mib").toInt();
     const bool replay = cli.isSet("replay");
-    if ((!replay && (cli.isSet("history") || cli.isSet("buffer-mib") || cli.isSet(managed))) ||
+    if ((!replay && (cli.isSet("history") || cli.isSet("buffer-mib") || cli.isSet("save-hotkey") || cli.isSet(managed))) ||
         history < 1 || history > 300 ||
         (cli.isSet("buffer-mib") && (configuredMiB < 1 || configuredMiB > 2048)))
         cli.showHelp(2);
+
+    const auto saveHotkey = cli.value("save-hotkey");
+    if (replay && !parseReplayHotkey(saveHotkey)) {
+        QTextStream(stderr) << "Invalid save hotkey: " << saveHotkey << Qt::endl;
+        return 2;
+    }
 
     const auto paths = cli.positionalArguments();
     const int fps = cli.value("fps").toInt();
@@ -161,7 +169,7 @@ int main(int argc, char **argv)
         // Allow 25% headroom for audio, bitrate variation and GOP alignment.
         const qint64 estimate = (qint64(bitrate) * (history + 1) * 156250 + mib - 1) / mib;
         const qint64 limitMiB = cli.isSet("buffer-mib") ? configuredMiB : std::clamp<qint64>(estimate, 96, 2048);
-        return recordReplay(args, output.absoluteFilePath(), desktop, history, limitMiB * mib, cli.isSet(managed));
+        return recordReplay(args, output.absoluteFilePath(), desktop, history, limitMiB * mib, cli.isSet(managed), saveHotkey);
     }
     QTemporaryDir staging(output.dir().filePath(".klippit-record-XXXXXX"));
     if (!staging.isValid()) {

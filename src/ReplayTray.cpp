@@ -1,5 +1,6 @@
 #include "ReplayTray.h"
 #include "Editor.h"
+#include "ReplaySettings.h"
 
 #include <QApplication>
 #include <QDateTime>
@@ -41,6 +42,10 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
     });
     details->setVisible(false);
     menu.addSeparator();
+    menu.addAction("Replay Settings…", this, [this] {
+        showEditor();
+        if (!quitting && !QApplication::activeModalWidget()) editReplaySettings(this->editor);
+    });
     configureStartup();
     menu.addAction("Quit Klippit", this, [this] {
         if (QApplication::activeModalWidget() || !this->editor.close()) return;
@@ -56,7 +61,8 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
         while (recorder.canReadLine()) {
             const auto event = QJsonDocument::fromJson(recorder.readLine()).object();
             const auto name = event["event"].toString();
-            if (name == "replay_ready" && stopAction->isEnabled()) setStatus("Replay is buffering");
+            if (name == "replay_ready" && stopAction->isEnabled())
+                setStatus("Replay is buffering · Save with " + event["save_hotkey"].toString());
             if (name == "clip_saved") {
                 const auto file = QFileInfo(event["path"].toString()).fileName();
                 const auto message = event["queued"].toBool() ? file + " added to Clips to Trim."
@@ -161,7 +167,7 @@ void ReplayTray::start()
     startAction->setEnabled(false);
     stopAction->setEnabled(true);
     setStatus("Starting replay…");
-    recorder.start(executable, {"--replay", "--managed", "--desktop-audio", output});
+    recorder.start(executable, QStringList{"--replay", "--managed"} + replaySettingsArguments() + QStringList{output});
 }
 
 void ReplayTray::stop()
