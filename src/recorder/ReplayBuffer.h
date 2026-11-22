@@ -27,6 +27,9 @@ private:
     struct Save {
         QList<QByteArray> fragments;
         QElapsedTimer timer;
+        QElapsedTimer readyTimer;
+        qint64 peakWriterBytes = 0;
+        qint64 enqueueNs = 0;
         qint64 bytes = 0;
         qint64 firstFragment = 0;
         qint64 lastFragment = 0;

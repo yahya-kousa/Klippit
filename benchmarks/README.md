@@ -49,6 +49,8 @@ Use a new directory for each run. The default command uses the existing build-x6
 
 summary.json contains each successful request-to-file-publication latency, its median, and sampled working-set peaks in bytes. Divide by 1,048,576 for MiB. memory.csv retains per-process samples for the recorder and its children. The sampler targets 100 ms and can miss brief peaks. Shared pages may be counted across processes. Per-save windows are estimated from receipt of the completion message and the recorder's own elapsed time. A null peak means no sample fell in that window. recorder.log retains the timing messages. This run measures recorder memory and save latency; use the separate PresentMon procedure for game frame times.
 
+For a full-history save baseline, add `--history 60 --desktop-audio` and allow at least 65 seconds of motion before each save. Consecutive saves exclude footage already saved. In recorder.log, each clip_saved event includes fragment_bytes, peak_writer_queue_bytes (logical pending bytes reported by Qt), enqueue_ns (time spent submitting the header and fragments), and snapshot_to_publish_ms (from availability of the requested fragment through publication, including any queued save ahead of it). Use recorder_pid from summary.json to isolate the recorder in memory.csv.
+
 ## Game audio trial on Windows
 
 Use `--desktop-audio` to capture whatever plays through the default Windows output, including other apps routed there. Select the game's playback device as the default before starting. For desktop plus microphone, list the recording devices and substitute the exact microphone name below.

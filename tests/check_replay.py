@@ -28,6 +28,9 @@ with tempfile.TemporaryDirectory() as tmp:
         events = [json.loads(line) for line in run.stdout.splitlines()]
         assert [event["event"] for event in events] == ["clip_saved", "clip_saved"], events
         assert all(event["queued"] for event in events), events
+        for event in events:
+            assert event["fragment_bytes"] > 0 and event["peak_writer_queue_bytes"] >= 0
+            assert event["enqueue_ns"] >= 0 and event["snapshot_to_publish_ms"] >= 0
         assert events[0]["last_fragment_ms"] < events[1]["first_fragment_ms"]
         second = Path(events[1]["path"])
         for saved, end in zip((first, second), ends):

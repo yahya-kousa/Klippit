@@ -95,6 +95,7 @@ void Replay::request()
 void Replay::queueSave()
 {
     Save snapshot;
+    snapshot.readyTimer.start();
     snapshot.timer = requestTimer;
     requestTimer.invalidate();
     auto first = ring.begin();
@@ -133,10 +134,13 @@ void Replay::finishSave(bool success, const QString &path)
     if (success) {
         publishedBoundary = snapshot.lastFragment;
         const auto elapsed = snapshot.timer.elapsed();
+        const auto readyToPublished = snapshot.readyTimer.elapsed();
         const bool queued = queue.add(path);
         if (!queued) qWarning() << "Clip saved, but could not add it to Clips to Trim:" << path;
         qInfo() << "Saved" << path << "in" << elapsed << "ms";
         const QJsonObject message{{"event", "clip_saved"}, {"path", path}, {"elapsed_ms", elapsed},
+                                  {"snapshot_to_publish_ms", readyToPublished}, {"fragment_bytes", snapshot.bytes},
+                                  {"peak_writer_queue_bytes", snapshot.peakWriterBytes}, {"enqueue_ns", snapshot.enqueueNs},
                                   {"queued", queued}, {"first_fragment_ms", snapshot.firstFragment / 90},
                                   {"last_fragment_ms", snapshot.lastFragment / 90}};
         QTextStream(stdout) << QJsonDocument(message).toJson(QJsonDocument::Compact) << Qt::endl;
@@ -186,7 +190,15 @@ void Replay::writeNext()
         return;
     }
     stage.setAutoRemove(false);
+    auto &snapshot = saves.front();
+    QElapsedTimer enqueueTimer;
+    enqueueTimer.start();
     writer.write(header);
-    for (const auto &fragment : saves.front().fragments) writer.write(fragment);
+    snapshot.peakWriterBytes = writer.bytesToWrite();
+    for (const auto &fragment : snapshot.fragments) {
+        writer.write(fragment);
+        snapshot.peakWriterBytes = qMax(snapshot.peakWriterBytes, writer.bytesToWrite());
+    }
+    snapshot.enqueueNs = enqueueTimer.nsecsElapsed();
     writer.closeWriteChannel();
 }

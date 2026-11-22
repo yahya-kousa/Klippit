@@ -16,11 +16,11 @@ import time
 import psutil
 
 
-def measure(executable, directory, encoder, audio_args=()):
+def measure(executable, directory, encoder, audio_args=(), history=15):
     directory.mkdir(parents=True, exist_ok=False)
     clip = directory.resolve() / "replay.mkv"
     command = [str(executable.resolve()), "--replay", "--fps", "60", "--bitrate", "30",
-               "--encoder", encoder, str(clip)]
+               "--encoder", encoder, "--history", str(history), str(clip)]
     command.extend(audio_args)
     metadata = {
         "command": command, "platform": platform.platform(), "psutil": psutil.__version__,
@@ -46,6 +46,7 @@ def measure(executable, directory, encoder, audio_args=()):
     env = dict(os.environ, QT_FORCE_STDERR_LOGGING="1")
     with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           env=env, text=True, errors="replace") as proc:
+        metadata["recorder_pid"] = proc.pid
         reader = threading.Thread(target=log_output, args=(proc.stdout,))
         reader.start()
         try:
@@ -118,6 +119,7 @@ if __name__ == "__main__":
     parser.add_argument("--recorder", type=Path, default=Path("build-x64/klippit-record.exe"))
     parser.add_argument("--encoder", default="h264_nvenc",
                         choices=["h264_nvenc", "h264_amf", "h264_qsv"])
+    parser.add_argument("--history", type=int, default=15, help="Replay history in seconds (1-300)")
     sources = parser.add_mutually_exclusive_group()
     sources.add_argument("--audio-device", help="Single DirectShow recording endpoint")
     sources.add_argument("--desktop-audio", action="store_true", help="Default playback endpoint")
@@ -132,6 +134,8 @@ if __name__ == "__main__":
         sys.exit(0)
     if args.directory.exists() or not args.recorder.is_file():
         parser.error("Choose a new run directory and an existing recorder executable.")
+    if not 1 <= args.history <= 300:
+        parser.error("--history must be between 1 and 300 seconds")
     audio = []
     if args.audio_device:
         audio = ["--audio-device", args.audio_device]
@@ -143,4 +147,4 @@ if __name__ == "__main__":
         if not args.mic:
             parser.error("--separate-mic requires --mic")
         audio.append("--separate-mic")
-    sys.exit(measure(args.recorder, args.directory, args.encoder, audio))
+    sys.exit(measure(args.recorder, args.directory, args.encoder, audio, args.history))
