@@ -30,9 +30,17 @@ private:
 }
 #endif
 
+#ifdef KLIPPIT_PACKAGED
+#include <Velopack.hpp>
+#endif
+
 int main(int argc, char **argv)
 {
 #ifdef Q_OS_WIN
+#ifdef KLIPPIT_PACKAGED
+    // Installer hooks must run before the single-instance check.
+    Velopack::VelopackApp::Build().SetAutoApplyOnStartup(false).Run();
+#endif
     bool signIn = false;
     for (int i = 1; i < argc; ++i)
         signIn |= QByteArrayView(argv[i]) == "--sign-in";

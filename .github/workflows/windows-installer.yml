@@ -1,0 +1,101 @@
+name: Windows installer
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-2022
+    env:
+      QT_VERSION: 6.8.3
+      VELO_VERSION: 1.2.0
+      FFMPEG_VERSION: 8.1.1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          modules: qtmultimedia qtshadertools
+      - uses: actions/checkout@v4
+        with:
+          repository: qt/qtbase
+          ref: v6.8.3
+          sparse-checkout: LICENSES
+          path: build-deps/qtbase
+          persist-credentials: false
+
+      - name: Get packaging tools and FFmpeg
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          function Expand-Verified($url, $hash, $name) {
+            $zip = "build-deps/$name.zip"
+            Invoke-WebRequest $url -OutFile $zip
+            if ((Get-FileHash $zip).Hash -ne $hash) { throw "Checksum mismatch for $name" }
+            Expand-Archive $zip "build-deps/$name"
+          }
+          Expand-Verified "https://github.com/velopack/velopack/releases/download/$env:VELO_VERSION/velopack_libc_$env:VELO_VERSION.zip" '547262ed7a1ab1ff62f580aa53851ede2f1a451ac61b8974eb7bc01117488835' 'velo'
+          Expand-Verified "https://github.com/GyanD/codexffmpeg/releases/download/$env:FFMPEG_VERSION/ffmpeg-$env:FFMPEG_VERSION-essentials_build.zip" '6f58ce889f59c311410f7d2b18895b33c03456463486f3b1ebc93d97a0f54541' 'ffmpeg'
+          $ff = Resolve-Path "build-deps/ffmpeg/ffmpeg-$env:FFMPEG_VERSION-essentials_build"
+          "$ff/bin" >> $env:GITHUB_PATH
+          "FFMPEG_ROOT=$ff" >> $env:GITHUB_ENV
+          dotnet tool install vpk --tool-path build-deps/tools --version $env:VELO_VERSION
+
+      - name: Build, test and deploy
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $sdk = Resolve-Path build-deps/velo
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DKLIPPIT_VELOPACK_SDK=$sdk" -DBUILD_TESTING=ON
+          cmake --build build --config Release --parallel
+          ctest --test-dir build -C Release --output-on-failure
+          cmake --install build --config Release --prefix out/app
+          windeployqt --release --no-compiler-runtime out/app/klippit.exe
+          Copy-Item "$env:FFMPEG_ROOT/bin/ffmpeg.exe","$env:FFMPEG_ROOT/bin/ffprobe.exe" out/app
+          New-Item -ItemType Directory out/app/notices | Out-Null
+          Copy-Item build-deps/qtbase/LICENSES out/app/notices/Qt -Recurse
+          Copy-Item "$env:FFMPEG_ROOT/LICENSE" out/app/notices/FFmpeg-LICENSE.txt
+          Copy-Item "$env:FFMPEG_ROOT/README.txt" out/app/notices/FFmpeg-build.txt
+          Invoke-WebRequest "https://raw.githubusercontent.com/velopack/velopack/$env:VELO_VERSION/LICENSE" -OutFile out/app/notices/Velopack-LICENSE.txt
+          Copy-Item README.md out/app
+          foreach ($file in 'Qt6Core.dll','platforms/qwindows.dll','multimedia/ffmpegmediaplugin.dll','vcruntime140.dll') {
+            if (!(Test-Path "out/app/$file")) { throw "Deployment is missing $file" }
+          }
+
+      - name: Smoke-test staged app without developer PATH
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          Set-Location out/app
+          $env:PATH = "$pwd;$env:SystemRoot/system32;$env:SystemRoot"
+          Remove-Item Env:QT_PLUGIN_PATH -ErrorAction SilentlyContinue
+          ./klippit-record.exe --help
+          ./ffprobe.exe -version
+          $filters = ./ffmpeg.exe -hide_banner -filters
+          if (!($filters -match '\bddagrab\b')) { throw 'Packaged FFmpeg has no desktop capture filter' }
+
+          $editor = Start-Process ./klippit.exe -PassThru
+          try {
+            $deadline = [DateTime]::UtcNow.AddSeconds(20)
+            do {
+              Start-Sleep -Milliseconds 250
+              $editor.Refresh()
+              if ($editor.HasExited) { throw "Editor exited with code $($editor.ExitCode)" }
+            } until ($editor.MainWindowTitle -eq 'Klippit' -or [DateTime]::UtcNow -gt $deadline)
+            if ($editor.MainWindowTitle -ne 'Klippit') { throw 'Editor window did not open' }
+          } finally {
+            if (!$editor.HasExited) { $editor.Kill(); $editor.WaitForExit() }
+          }
+
+      - name: Create local-test installer
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          ./build-deps/tools/vpk.exe pack --packId Klippit --packVersion "0.1.$env:GITHUB_RUN_NUMBER" --mainExe klippit.exe --runtime win-x64 --packDir out/app --outputDir out/installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Klippit-Windows-x64
+          path: out/installer/*Setup.exe
+          if-no-files-found: error

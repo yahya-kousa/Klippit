@@ -72,3 +72,11 @@ A separate command-line target supports a 15-second recording or a RAM replay bu
 
 - Klippit uses Qt 6. Qt Core handles process management, Qt Widgets provides the editor interface, and Qt Multimedia and Multimedia Widgets handle audio and video preview. [Qt licensing](https://doc.qt.io/qt-6/licensing.html)
 - Klippit invokes FFmpeg and ffprobe for keyframe indexing, stream-copy exports, and experimental Windows recording. [FFmpeg licensing](https://ffmpeg.org/legal.html)
+
+## Test the Windows installer
+
+Maintainers can build an unsigned x64 installer from the **Actions → Windows installer → Run workflow** menu on GitHub. Open the completed run, download the **Klippit-Windows-x64** artifact, extract the ZIP, and open its Setup executable. The installed app is available from Start. Each workflow run builds a test version numbered `0.1.<run number>`.
+
+For the first smoke test, quit any development copy from its tray menu, then use a clean Windows account or VM without Qt or FFmpeg on PATH. Launch from Start, open a clip, preview and export a trim. On a PC with a supported encoder, start replay, save a clip and open it from **Clips to Trim**. Quit and relaunch from Start to check the queue persists. If migrating a development machine, re-enable sign-in launch from the installed copy so Windows uses its executable.
+
+The test installer includes both Klippit executables, Qt's Windows and multimedia plugins, the compiler runtime, FFmpeg and ffprobe. Velopack handles per-user installation and shortcuts. In-app update checks and public releases are a later milestone.
