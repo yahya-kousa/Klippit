@@ -40,7 +40,7 @@ int main(int argc, char **argv)
     cli.addHelpOption();
     cli.addPositionalArgument("output.mkv", "New output file");
     cli.addOptions({
-        {"replay", "Keep recent encoded video in RAM (Ctrl+Shift+F9 saves, Ctrl+Shift+F10 stops)."},
+        {"replay", "Keep recent encoded video in RAM (Ctrl+Shift+F9 saves, Ctrl+Shift+End or console Q stops)."},
         {"encoder", "auto, h264_nvenc, h264_amf, or h264_qsv", "name", "auto"},
         {"display", "DXGI output index", "index", "0"},
         {"fps", "Capture rate in frames per second (1-240)", "fps", "60"},

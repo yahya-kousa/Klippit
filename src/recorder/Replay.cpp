@@ -8,6 +8,9 @@
 #ifdef Q_OS_WIN
 #include <QAbstractNativeEventFilter>
 #include <windows.h>
+#include <conio.h>
+#include <io.h>
+#include <cstdio>
 #endif
 
 int recordReplay(QStringList args, const QString &firstPath)
@@ -28,7 +31,7 @@ int recordReplay(QStringList args, const QString &firstPath)
     QTimer controls;
 #ifdef Q_OS_WIN
     if (!RegisterHotKey(nullptr, 1, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_F9) ||
-        !RegisterHotKey(nullptr, 2, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_F10)) {
+        !RegisterHotKey(nullptr, 2, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_END)) {
         qWarning("Could not register replay hotkeys");
         capture.kill();
         capture.waitForFinished();
@@ -36,9 +39,23 @@ int recordReplay(QStringList args, const QString &firstPath)
         return 1;
     }
 #endif
-    qInfo("Replay active: Ctrl+Shift+F9 saves, Ctrl+Shift+F10 stops.");
+    qInfo("Replay active: Ctrl+Shift+F9 saves, Ctrl+Shift+End stops. You can also press Q in this console.");
     bool stopping = false;
+#ifdef Q_OS_WIN
+    // Read only from an interactive terminal, including one shared with the benchmark runner.
+    const bool consoleInput = _isatty(_fileno(stdin)) != 0;
+#endif
     QObject::connect(&controls, &QTimer::timeout, [&]{
+#ifdef Q_OS_WIN
+        if (!stopping && consoleInput && _kbhit()) {
+            const int key = _getch();
+            if (key == 0 || key == 0xe0) _getch(); // Consume extended key scan code.
+            else if (key == 'q' || key == 'Q') {
+                stopping = true;
+                qInfo("Console stop received.");
+            }
+        }
+#endif
         if (stopping && !replay.waitingForFragment() && capture.state() == QProcess::Running)
             capture.kill();
         if (capture.state() == QProcess::NotRunning && !replay.saving()) {
