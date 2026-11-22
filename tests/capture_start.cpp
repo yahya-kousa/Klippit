@@ -2,7 +2,6 @@
 
 #include <QCoreApplication>
 #include <QFile>
-#include <QDebug>
 #include <cstdio>
 #ifdef Q_OS_WIN
 #include <fcntl.h>
@@ -35,7 +34,7 @@ int main(int argc, char **argv)
     // A seekable output lets FFmpeg put the actual data length in the WAV header.
     const QString wav = dir.filePath("tone.wav");
     if (QProcess::execute("ffmpeg", {"-v", "error", "-f", "lavfi", "-i",
-                                    "sine=duration=0.2", wav}) != 0) return 1;
+                                    "sine=duration=2", wav}) != 0) return 1;
     qputenv("KLIPPIT_TEST_WAV", wav.toUtf8());
     const QString marker = dir.filePath("started");
     qputenv("KLIPPIT_TEST_HELPER_MARKER", marker.toUtf8());
@@ -43,21 +42,33 @@ int main(int argc, char **argv)
         QProcess capture, helper;
         const QStringList args{"-nostdin", "-hide_banner", "-nostats", "-loglevel", "info",
                                "-f", "lavfi", "-i", validInput ? "color=d=0.2" : "no_such_filter",
-                               "-f", "wav", "-i", "pipe:0", "-map", "0:v", "-map", "1:a",
-                               "-f", "null", "-"};
-        if (startCapture(capture, args, &helper) != validInput) return 1;
+                               "-probesize", "32", "-ignore_length", "1", "-f", "wav", "-i", "pipe:0", "-map", "0:v", "-map", "1:a",
+                               "-t", "0.2", "-abort_on", "empty_output_stream", "-f", "null", "-"};
+        if (startCapture(capture, args, &helper) != validInput) {
+            std::fprintf(stderr, "Unexpected startup result for %s video input.\n",
+                         validInput ? "valid" : "invalid");
+            return 1;
+        }
         if (validInput) {
-            // Reap the producer first so Qt can release its end of the process pipe.
-            for (auto *process : {&helper, &capture}) {
-                if ((process->state() != QProcess::NotRunning && !process->waitForFinished(10000)) ||
-                    process->exitStatus() != QProcess::NormalExit || process->exitCode() != 0) {
-                    qWarning() << (process == &helper ? "WAV helper" : "Capture FFmpeg")
-                               << "failed or timed out:" << process->errorString();
-                    return 1;
-                }
+            // The recorder consumes a live pipe. Finish on media time even if the
+            // producer still has samples to write and stdin has not reached EOF.
+            const bool finished = capture.waitForFinished(10000) ||
+                                  capture.state() == QProcess::NotRunning;
+            if (!finished || capture.exitStatus() != QProcess::NormalExit || capture.exitCode() != 0) {
+                std::fprintf(stderr, "Capture FFmpeg failed: finished=%d code=%d error=%s\n",
+                             int(finished), capture.exitCode(), qPrintable(capture.errorString()));
+                return 1;
+            }
+            if (helper.state() != QProcess::NotRunning && !helper.waitForFinished(1000) &&
+                helper.state() != QProcess::NotRunning) {
+                helper.kill();
+                if (!helper.waitForFinished()) return 1;
             }
         }
-        if (QFile::exists(marker) != validInput) return 1;
+        if (QFile::exists(marker) != validInput) {
+            std::fputs("Unexpected helper startup marker.\n", stderr);
+            return 1;
+        }
     }
     return 0;
 }
