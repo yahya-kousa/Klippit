@@ -7,6 +7,7 @@ qt_standard_project_setup()
 qt_add_executable(klippit
     src/main.cpp
     src/Editor.h src/Editor.cpp
+    src/ClipQueue.h src/ClipQueue.cpp
     src/Timeline.h src/Timeline.cpp
     src/ClipExporter.h src/ClipExporter.cpp
 )
@@ -31,8 +32,8 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME capture_start COMMAND capture_start_test)
     set_tests_properties(capture_start PROPERTIES TIMEOUT 30)
-    add_executable(replay_buffer_test tests/replay_buffer.cpp src/recorder/ReplayBuffer.cpp)
-    target_include_directories(replay_buffer_test PRIVATE src/recorder)
+    add_executable(replay_buffer_test tests/replay_buffer.cpp src/recorder/ReplayBuffer.cpp src/ClipQueue.cpp)
+    target_include_directories(replay_buffer_test PRIVATE src/recorder src)
     target_link_libraries(replay_buffer_test PRIVATE Qt6::Core)
     add_test(NAME replay_buffer COMMAND Python3::Interpreter -B
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_replay.py" $<TARGET_FILE:replay_buffer_test> $<TARGET_FILE:export_trim_test>)
@@ -43,6 +44,7 @@ if(BUILD_TESTING)
 endif()
 
 if(WIN32)
-    add_executable(klippit-record src/recorder/main.cpp src/recorder/Loopback.cpp src/recorder/Replay.cpp src/recorder/ReplayBuffer.cpp)
+    add_executable(klippit-record src/recorder/main.cpp src/recorder/Loopback.cpp src/recorder/Replay.cpp src/recorder/ReplayBuffer.cpp src/ClipQueue.cpp)
+    target_include_directories(klippit-record PRIVATE src)
     target_link_libraries(klippit-record PRIVATE Qt6::Core user32 ole32)
 endif()

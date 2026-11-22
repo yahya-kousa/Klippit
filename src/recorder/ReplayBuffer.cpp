@@ -34,8 +34,8 @@ std::optional<qint64> decodeTime(QByteArrayView boxes)
 
 } // namespace
 
-Replay::Replay(QString path, qint64 maxHistoryBytes, int historySeconds)
-    : firstPath(std::move(path)), byteLimit(maxHistoryBytes),
+Replay::Replay(QString path, qint64 maxHistoryBytes, int historySeconds, ClipQueue clipQueue)
+    : queue(std::move(clipQueue)), firstPath(std::move(path)), byteLimit(maxHistoryBytes),
       historyTicks(historySeconds * replayTimescale)
 {}
 
@@ -133,9 +133,11 @@ void Replay::finishSave(bool success, const QString &path)
     if (success) {
         publishedBoundary = snapshot.lastFragment;
         const auto elapsed = snapshot.timer.elapsed();
+        const bool queued = queue.add(path);
+        if (!queued) qWarning() << "Clip saved, but could not add it to Clips to Trim:" << path;
         qInfo() << "Saved" << path << "in" << elapsed << "ms";
         const QJsonObject message{{"event", "clip_saved"}, {"path", path}, {"elapsed_ms", elapsed},
-                                  {"first_fragment_ms", snapshot.firstFragment / 90},
+                                  {"queued", queued}, {"first_fragment_ms", snapshot.firstFragment / 90},
                                   {"last_fragment_ms", snapshot.lastFragment / 90}};
         QTextStream(stdout) << QJsonDocument(message).toJson(QJsonDocument::Compact) << Qt::endl;
     } else {

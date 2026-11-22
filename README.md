@@ -51,7 +51,7 @@ The test generates a temporary 60 FPS recording with two audio tracks, runs the 
 
 ## Project status
 
-Klippit is an early single-range editor for existing recordings. Edits last until you open another recording or quit. The experimental Windows recorder can retain recent video in RAM and save it with a hotkey.
+Klippit is an early single-range editor for existing recordings. The **Clips to Trim** queue shows replays saved by the recorder, including saves made while the editor is closed. Open a clip to trim it, then mark it done to move it to **Show completed**. Both views persist across restarts and keep the source MKV in its original location. Edits last until you open another recording or quit. The experimental Windows recorder can retain recent video in RAM and save it with a hotkey.
 
 The editor and export workflow have been tested on CachyOS with a 1440p Overwatch recording. All 300 decoded frames in a five-second export matched the corresponding source frames, and the AAC packet payloads matched the source. Windows and macOS GUI builds still need verification.
 

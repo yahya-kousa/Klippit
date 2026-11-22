@@ -27,6 +27,7 @@ with tempfile.TemporaryDirectory() as tmp:
                               *map(str, ends), "serial" if limit == 200_000 else "overlap"], check=True, capture_output=True, text=True)
         events = [json.loads(line) for line in run.stdout.splitlines()]
         assert [event["event"] for event in events] == ["clip_saved", "clip_saved"], events
+        assert all(event["queued"] for event in events), events
         assert events[0]["last_fragment_ms"] < events[1]["first_fragment_ms"]
         second = Path(events[1]["path"])
         for saved, end in zip((first, second), ends):

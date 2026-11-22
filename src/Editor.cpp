@@ -1,4 +1,5 @@
 #include "Editor.h"
+#include "ClipQueue.h"
 #include "Timeline.h"
 #include <QtWidgets>
 #include <QVideoWidget>
@@ -25,7 +26,11 @@ void Editor::open()
     if (exporter.isBusy()) return;
     auto file = QFileDialog::getOpenFileName(this, "Open replay", {},
         "Video (*.mp4 *.mkv *.mov);;All files (*)");
-    if (file.isEmpty()) return;
+    if (!file.isEmpty()) openFile(file);
+}
+
+void Editor::openFile(const QString &file)
+{
     player.stop();
     source = file;
     if (probe.state() != QProcess::NotRunning) {
@@ -47,6 +52,95 @@ void Editor::open()
     timeline->setRange(0, int(end));
     player.setPosition(0);
     refresh();
+}
+
+void Editor::showClipQueue()
+{
+    if (exporter.isBusy()) return;
+
+    const ClipQueue queue;
+    if (!queue.ensureDirectory()) {
+        status->setText("Could not open the Clips to Trim folder.");
+        return;
+    }
+    QDialog dialog(this);
+    dialog.setWindowTitle("Clips to Trim");
+    dialog.resize(600, 340);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *completed = new QCheckBox("Show completed");
+    auto *list = new QListWidget;
+    auto *message = new QLabel;
+    message->setWordWrap(true);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
+    auto *openClip = buttons->addButton("Open Clip", QDialogButtonBox::AcceptRole);
+    auto *changeState = buttons->addButton("Mark Done", QDialogButtonBox::ActionRole);
+    layout->addWidget(completed);
+    layout->addWidget(list);
+    layout->addWidget(message);
+    layout->addWidget(buttons);
+
+    QList<ClipQueue::Entry> entries;
+    QString selectedPath;
+    auto updateButtons = [&] {
+        const int row = list->currentRow();
+        openClip->setEnabled(row >= 0 && QFileInfo(entries.at(row).path).isFile());
+        changeState->setEnabled(row >= 0);
+    };
+    auto refreshQueue = [&] {
+        const int row = list->currentRow();
+        const QString selectedId = row >= 0 ? entries.at(row).id : QString();
+        const QSignalBlocker blocked(list);
+        list->clear();
+        bool readError = false;
+        entries = queue.entries(completed->isChecked(), &readError);
+        int selection = 0;
+        for (int i = 0; i < entries.size(); ++i) {
+            const auto &entry = entries.at(i);
+            QString label = QFileInfo(entry.path).fileName() + "   ·   " +
+                QLocale().toString(entry.savedAt.toLocalTime(), QLocale::ShortFormat);
+            if (!QFileInfo(entry.path).isFile()) label += "   ·   File missing";
+            auto *item = new QListWidgetItem(label, list);
+            item->setToolTip(entry.path);
+            if (entry.id == selectedId) selection = i;
+        }
+        list->setCurrentRow(entries.isEmpty() ? -1 : selection);
+        changeState->setText(completed->isChecked() ? "Move Back to Queue" : "Mark Done");
+        if (readError) message->setText("Some queue entries could not be read.");
+        else if (entries.isEmpty())
+            message->setText(completed->isChecked() ? "No completed clips." : "No clips waiting to be trimmed.");
+        else message->clear();
+        updateButtons();
+    };
+    auto openSelected = [&] {
+        if (list->currentRow() < 0) return;
+        const auto &path = entries.at(list->currentRow()).path;
+        if (!QFileInfo(path).isFile()) {
+            refreshQueue();
+            message->setText("This clip file is missing.");
+            return;
+        }
+        selectedPath = path;
+        dialog.accept();
+    };
+
+    connect(completed, &QCheckBox::toggled, &dialog, refreshQueue);
+    connect(list, &QListWidget::currentRowChanged, &dialog, updateButtons);
+    connect(list, &QListWidget::itemDoubleClicked, &dialog, openSelected);
+    connect(openClip, &QPushButton::clicked, &dialog, openSelected);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(changeState, &QPushButton::clicked, &dialog, [&] {
+        const int row = list->currentRow();
+        if (row < 0) return;
+        const bool changed = queue.setCompleted(entries.at(row), !completed->isChecked());
+        refreshQueue();
+        if (!changed) message->setText("Could not update this clip's queue status.");
+    });
+    QFileSystemWatcher watcher;
+    const bool watching = watcher.addPath(queue.directory());
+    connect(&watcher, &QFileSystemWatcher::directoryChanged, &dialog, refreshQueue);
+    refreshQueue();
+    if (!watching) message->setText("Reopen Clips to Trim to see new saves.");
+    if (dialog.exec() == QDialog::Accepted) openFile(selectedPath);
 }
 
 void Editor::mark(bool first)
@@ -151,6 +245,10 @@ Editor::Editor()
         connect(new QShortcut(key, this), &QShortcut::activated, this, fn);
     };
     action("Open   Ctrl+O", QKeySequence::Open, [this]{ open(); });
+    auto *queueButton = new QPushButton("Clips to Trim");
+    queueButton->setFocusPolicy(Qt::NoFocus);
+    buttons->addWidget(queueButton);
+    connect(queueButton, &QPushButton::clicked, this, [this]{ showClipQueue(); });
     action("Play / pause   K", Qt::Key_K, [this]{
         previewing = false;
         if (player.playbackState() == QMediaPlayer::PlayingState) player.pause();

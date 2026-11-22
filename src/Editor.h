@@ -30,6 +30,8 @@ class Editor : public QWidget {
     void refresh();
 
     void open();
+    void openFile(const QString &file);
+    void showClipQueue();
 
     void mark(bool first);
 

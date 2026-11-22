@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ClipQueue.h"
 #include <QElapsedTimer>
 #include <QProcess>
 #include <QList>
@@ -11,7 +12,7 @@ inline constexpr qint64 replayTimescale = 90000;
 class Replay {
 public:
     explicit Replay(QString path, qint64 maxHistoryBytes = 96 * 1024 * 1024,
-                    int historySeconds = 15);
+                    int historySeconds = 15, ClipQueue clipQueue = ClipQueue());
     bool ingest(const QByteArray &chunk);
     void request();
     bool waitingForFragment() const { return requestTimer.isValid(); }
@@ -35,6 +36,7 @@ private:
     void report(const char *event, const QString &detail);
 
     QProcess writer;
+    ClipQueue queue;
     QString firstPath;
     QByteArray header, pending, metadata;
     std::optional<qint64> start;
