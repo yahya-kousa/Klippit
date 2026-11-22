@@ -1,6 +1,9 @@
 #include "ReplayTray.h"
 #include "Editor.h"
 #include "ReplaySettings.h"
+#ifdef KLIPPIT_PACKAGED
+#include "AppUpdate.h"
+#endif
 
 #include <QApplication>
 #include <QDateTime>
@@ -52,8 +55,11 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
         finishHotkeyUpdate("The recorder did not confirm the new shortcut.");
     });
     configureStartup();
+#ifdef KLIPPIT_PACKAGED
+    configureUpdates();
+#endif
     menu.addAction("Quit Klippit", this, [this] {
-        if (QApplication::activeModalWidget() || !this->editor.close()) return;
+        if (quitting || QApplication::activeModalWidget() || !this->editor.close()) return;
         quitting = true;
         if (recorder.state() == QProcess::NotRunning) QApplication::quit();
         else stop();
@@ -85,6 +91,9 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
                                                               : file + " saved. Open it manually.";
                 tray.showMessage("Clip saved", message);
             } else if (name == "clip_failed" || name == "clip_rejected") {
+#ifdef KLIPPIT_PACKAGED
+                if (restarting) completeRestart(false);
+#endif
                 tray.showMessage("Could not save replay", event["detail"].toString(), QSystemTrayIcon::Warning);
             }
         }
@@ -96,6 +105,9 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
         if (error != QProcess::FailedToStart) return;
         finishHotkeyUpdate("Replay could not start.");
         reportFailure(recorder.errorString());
+#ifdef KLIPPIT_PACKAGED
+        if (restarting) { completeRestart(false); return; }
+#endif
         if (quitting) QApplication::quit();
     });
     connect(&recorder, &QProcess::finished, this, [this](int code, QProcess::ExitStatus exit) {
@@ -107,6 +119,9 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
             stopAction->setEnabled(false);
             setStatus("Replay is off");
         }
+#ifdef KLIPPIT_PACKAGED
+        if (restarting) { completeRestart(code == 0 && exit == QProcess::NormalExit); return; }
+#endif
         if (quitting) QApplication::quit();
     });
 
@@ -149,6 +164,68 @@ void ReplayTray::finishHotkeyUpdate(const QString &message)
         tray.showMessage("Save hotkey", message, QSystemTrayIcon::Warning);
     }
 }
+
+#ifdef KLIPPIT_PACKAGED
+void ReplayTray::configureUpdates()
+{
+    updateAction = menu.addAction("Check for updates…", this, [this] {
+        if (quitting || QApplication::activeModalWidget()) return;
+        if (updateVersion.isEmpty()) {
+            updateAction->setEnabled(false);
+            updateAction->setText("Checking for updates…");
+            updateWorker.start(QCoreApplication::applicationFilePath(), {"--prepare-update"});
+            return;
+        }
+        const auto answer = QMessageBox::question(&editor, "Restart and update",
+            QString("Restart Klippit to install version %1? Unsaved replay history and trim marks "
+                    "will be lost. Requested saves will finish first.").arg(updateVersion),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+        if (answer != QMessageBox::Yes || !editor.close()) return;
+        quitting = restarting = true;
+        updateAction->setEnabled(false);
+        if (recorder.state() == QProcess::NotRunning) completeRestart(true);
+        else stop();
+    });
+    auto checkFailed = [this](const QString &reason) {
+        updateAction->setText("Check for updates…");
+        updateAction->setEnabled(true);
+        tray.showMessage("Update check failed", reason, QSystemTrayIcon::Warning);
+    };
+    connect(&updateWorker, &QProcess::errorOccurred, this, [this, checkFailed](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart) checkFailed(updateWorker.errorString());
+    });
+    connect(&updateWorker, &QProcess::finished, this, [this, checkFailed](int code, QProcess::ExitStatus status) {
+        const QString version = QString::fromUtf8(updateWorker.readAllStandardOutput()).trimmed();
+        const QString diagnostic = QString::fromUtf8(updateWorker.readAllStandardError()).trimmed();
+        if (status != QProcess::NormalExit || code != 0) {
+            checkFailed(diagnostic.isEmpty() ? "Update worker exited unexpectedly." : diagnostic);
+            return;
+        }
+        updateVersion = version;
+        updateAction->setEnabled(true);
+        updateAction->setText(version.isEmpty() ? QStringLiteral("Check for updates…")
+                                               : QString("Restart and update to %1…").arg(version));
+        tray.showMessage("Klippit updates", version.isEmpty() ? QStringLiteral("You're up to date.")
+            : QString("Version %1 is ready. Restart from the tray when convenient.").arg(version));
+    });
+}
+
+void ReplayTray::completeRestart(bool recorderStoppedCleanly)
+{
+    const QString error = recorderStoppedCleanly ? scheduleAppUpdate(updateVersion)
+        : QStringLiteral("Replay did not finish cleanly. Check the saved clips before retrying.");
+    if (error.isEmpty()) {
+        QApplication::quit();
+        return;
+    }
+    restarting = quitting = false;
+    updateVersion.clear();
+    updateAction->setEnabled(true);
+    updateAction->setText("Check for updates…");
+    showEditor();
+    tray.showMessage("Update postponed", error, QSystemTrayIcon::Warning);
+}
+#endif
 
 void ReplayTray::configureStartup()
 {

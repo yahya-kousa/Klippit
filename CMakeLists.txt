@@ -50,11 +50,16 @@ if(WIN32)
     target_include_directories(klippit-record PRIVATE src)
     target_link_libraries(klippit-record PRIVATE Qt6::Core user32 ole32)
 
-    # Only the packaged editor needs installer activation hooks.
+    # Source builds can run without the installer and updater SDK.
     set(KLIPPIT_VELOPACK_SDK "" CACHE PATH "Extracted Velopack SDK for Windows x64 packaging")
     if(KLIPPIT_VELOPACK_SDK)
         set(velo_lib "${KLIPPIT_VELOPACK_SDK}/lib/velopack_libc_win_x64_msvc.dll")
+        target_sources(klippit PRIVATE src/AppUpdate.cpp src/AppUpdate.h)
         target_compile_definitions(klippit PRIVATE KLIPPIT_PACKAGED)
+        option(KLIPPIT_LOCAL_UPDATE_TEST "Use the local Windows smoke-test feed" OFF)
+        if(KLIPPIT_LOCAL_UPDATE_TEST)
+            target_compile_definitions(klippit PRIVATE KLIPPIT_LOCAL_UPDATE_TEST)
+        endif()
         target_include_directories(klippit PRIVATE "${KLIPPIT_VELOPACK_SDK}/include")
         target_link_libraries(klippit PRIVATE "${velo_lib}.lib")
         install(TARGETS klippit klippit-record RUNTIME DESTINATION .)

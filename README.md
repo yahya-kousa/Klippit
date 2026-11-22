@@ -79,4 +79,12 @@ Maintainers can build an unsigned x64 installer from the **Actions → Windows i
 
 For the first smoke test, quit any development copy from its tray menu, then use a clean Windows account or VM without Qt or FFmpeg on PATH. Launch from Start, open a clip, preview and export a trim. On a PC with a supported encoder, start replay, save a clip and open it from **Clips to Trim**. Quit and relaunch from Start to check the queue persists. If migrating a development machine, re-enable sign-in launch from the installed copy so Windows uses its executable.
 
-The test installer includes both Klippit executables, Qt's Windows and multimedia plugins, the compiler runtime, FFmpeg and ffprobe. Velopack handles per-user installation and shortcuts. In-app update checks and public releases are a later milestone.
+The test installer includes both Klippit executables, Qt's Windows and multimedia plugins, the compiler runtime, FFmpeg and ffprobe. Velopack handles per-user installation and shortcuts. In an installed build, choose **Check for updates…** in the tray to check the latest GitHub Release and download a newer package. Capture continues while it downloads. Choose **Restart and update** when ready. Restarting discards unsaved replay history and trim marks. The editor waits for you to finish an active export, and the recorder finishes requested saves before restart.
+
+### Test an upgrade before publishing
+
+1. Run the installer workflow with **local_update_test** checked. Install that build on your Windows test account.
+2. Run the workflow again with the box unchecked. Extract the second run’s **Klippit-Windows-x64-update** artifact directly into `%LOCALAPPDATA%\Klippit-update-test`. The directory should contain `releases.win.json` and the full `.nupkg`.
+3. In the first build, save a replay and check for updates. Confirm the tray offers the second version, postpone restart, then use the restart action when ready. Verify the saved clip, queue, settings and sign-in preference after relaunch. The newly installed build now checks GitHub.
+
+For a public release, attach Setup.exe (using its generated filename), `releases.win.json` and its matching full package from the **same normal workflow run** to the GitHub Release marked latest. Extract the artifacts before uploading the files. The workflow only builds artifacts. A published release with those assets is needed for the public update feed.

@@ -13,6 +13,14 @@ public:
     bool isAvailable() const { return tray.isVisible(); }
 
 private:
+#ifdef KLIPPIT_PACKAGED
+    void configureUpdates();
+    void completeRestart(bool recorderStoppedCleanly);
+    QProcess updateWorker;
+    QAction *updateAction = nullptr;
+    QString updateVersion;
+    bool restarting = false;
+#endif
     void configureStartup();
     void start();
     void stop();

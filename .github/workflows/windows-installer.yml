@@ -1,5 +1,11 @@
 name: Windows installer
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      local_update_test:
+        description: Read updates from a local folder for a two-version smoke test
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -11,6 +17,7 @@ jobs:
       QT_VERSION: 6.8.3
       VELO_VERSION: 1.2.0
       FFMPEG_VERSION: 8.1.1
+      LOCAL_UPDATE_TEST: ${{ inputs.local_update_test && 'ON' || 'OFF' }}
     steps:
       - uses: actions/checkout@v4
       - uses: jurplel/install-qt-action@v4
@@ -48,7 +55,7 @@ jobs:
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           $sdk = Resolve-Path build-deps/velo
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DKLIPPIT_VELOPACK_SDK=$sdk" -DBUILD_TESTING=ON
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DKLIPPIT_VELOPACK_SDK=$sdk" "-DKLIPPIT_LOCAL_UPDATE_TEST=$env:LOCAL_UPDATE_TEST" -DBUILD_TESTING=ON
           cmake --build build --config Release --parallel
           ctest --test-dir build -C Release --output-on-failure
           cmake --install build --config Release --prefix out/app
@@ -65,17 +72,24 @@ jobs:
           }
 
       - name: Smoke-test staged app without developer PATH
+        timeout-minutes: 2
+        env:
+          QT_COMMAND_LINE_PARSER_NO_GUI_MESSAGE_BOXES: "1"
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           Set-Location out/app
           $env:PATH = "$pwd;$env:SystemRoot/system32;$env:SystemRoot"
           Remove-Item Env:QT_PLUGIN_PATH -ErrorAction SilentlyContinue
+          Write-Host "Starting staged recorder help check"
           ./klippit-record.exe --help
+          Write-Host "Checking staged ffprobe"
           ./ffprobe.exe -version
+          Write-Host "Checking staged FFmpeg capture filters"
           $filters = ./ffmpeg.exe -hide_banner -filters
           if (!($filters -match '\bddagrab\b')) { throw 'Packaged FFmpeg has no desktop capture filter' }
 
+          Write-Host "Opening staged editor window"
           $editor = Start-Process ./klippit.exe -PassThru
           try {
             $deadline = [DateTime]::UtcNow.AddSeconds(20)
@@ -94,8 +108,20 @@ jobs:
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           ./build-deps/tools/vpk.exe pack --packId Klippit --packVersion "0.1.$env:GITHUB_RUN_NUMBER" --mainExe klippit.exe --runtime win-x64 --packDir out/app --outputDir out/installer
+          $feed = Get-Content out/installer/releases.win.json -Raw | ConvertFrom-Json
+          $full = @($feed.Assets | Where-Object Type -eq Full)
+          if ($full.Count -ne 1 -or !(Test-Path -LiteralPath (Join-Path out/installer $full[0].FileName))) {
+            throw 'Full update package missing from the generated release feed'
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: Klippit-Windows-x64
           path: out/installer/*Setup.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Klippit-Windows-x64-update
+          path: |
+            out/installer/releases.win.json
+            out/installer/*-full.nupkg
           if-no-files-found: error
