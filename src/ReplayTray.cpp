@@ -42,9 +42,14 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
     });
     details->setVisible(false);
     menu.addSeparator();
-    menu.addAction("Replay Settings…", this, [this] {
+    settingsAction = menu.addAction("Replay Settings…", this, [this] {
         showEditor();
-        if (!quitting && !QApplication::activeModalWidget()) editReplaySettings(this->editor);
+        if (quitting || QApplication::activeModalWidget()) return;
+        if (const auto shortcut = editReplaySettings(this->editor)) updateHotkey(*shortcut);
+    });
+    hotkeyTimeout.setSingleShot(true);
+    connect(&hotkeyTimeout, &QTimer::timeout, this, [this] {
+        finishHotkeyUpdate("The recorder did not confirm the new shortcut.");
     });
     configureStartup();
     menu.addAction("Quit Klippit", this, [this] {
@@ -61,8 +66,19 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
         while (recorder.canReadLine()) {
             const auto event = QJsonDocument::fromJson(recorder.readLine()).object();
             const auto name = event["event"].toString();
-            if (name == "replay_ready" && stopAction->isEnabled())
+            if (name == "replay_ready") bufferReady = true;
+            if ((name == "replay_ready" || name == "save_hotkey_changed") && bufferReady && stopAction->isEnabled())
                 setStatus("Replay is buffering · Save with " + event["save_hotkey"].toString());
+            if (!pendingHotkey.isEmpty() && event["requested"].toString() == pendingHotkey) {
+                if (name == "save_hotkey_changed") {
+                    const auto shortcut = pendingHotkey;
+                    const bool stored = storeReplayHotkey(pendingHotkey);
+                    finishHotkeyUpdate(stored ? QString() : "The live shortcut changed, but could not be saved for next time.");
+                    if (stored) tray.showMessage("Save hotkey updated", "Press " + shortcut + " to save a replay.");
+                } else if (name == "save_hotkey_rejected") {
+                    finishHotkeyUpdate(event["detail"].toString());
+                }
+            }
             if (name == "clip_saved") {
                 const auto file = QFileInfo(event["path"].toString()).fileName();
                 const auto message = event["queued"].toBool() ? file + " added to Clips to Trim."
@@ -78,10 +94,12 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
     });
     connect(&recorder, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error != QProcess::FailedToStart) return;
+        finishHotkeyUpdate("Replay could not start.");
         reportFailure(recorder.errorString());
         if (quitting) QApplication::quit();
     });
     connect(&recorder, &QProcess::finished, this, [this](int code, QProcess::ExitStatus exit) {
+        finishHotkeyUpdate("Replay ended before confirming the new shortcut.");
         if (code != 0 || exit != QProcess::NormalExit)
             reportFailure(QString("Recorder exited with code %1.").arg(code));
         else {
@@ -101,6 +119,35 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
     tray.setIcon(QApplication::style()->standardIcon(QStyle::SP_MediaPlay));
     tray.setContextMenu(&menu);
     tray.show();
+}
+
+void ReplayTray::updateHotkey(const QString &shortcut)
+{
+    if (recorder.state() == QProcess::NotRunning || !stopAction->isEnabled()) {
+        if (!storeReplayHotkey(shortcut))
+            tray.showMessage("Save hotkey", "Could not save the shortcut.", QSystemTrayIcon::Warning);
+        return;
+    }
+    pendingHotkey = shortcut;
+    settingsAction->setEnabled(false);
+    if (recorder.write("hotkey " + shortcut.toUtf8() + '\n') < 0) {
+        finishHotkeyUpdate("Could not send the shortcut to the recorder.");
+        return;
+    }
+    hotkeyTimeout.start(5000);
+}
+
+void ReplayTray::finishHotkeyUpdate(const QString &message)
+{
+    if (pendingHotkey.isEmpty()) return;
+    pendingHotkey.clear();
+    hotkeyTimeout.stop();
+    settingsAction->setEnabled(true);
+    if (!message.isEmpty()) {
+        diagnostics = (diagnostics + '\n' + message).right(4000);
+        details->setVisible(true);
+        tray.showMessage("Save hotkey", message, QSystemTrayIcon::Warning);
+    }
 }
 
 void ReplayTray::configureStartup()
@@ -147,6 +194,7 @@ void ReplayTray::configureStartup()
 void ReplayTray::start()
 {
     if (recorder.state() != QProcess::NotRunning || quitting) return;
+    bufferReady = false;
     diagnostics.clear();
     details->setVisible(false);
     const auto executable = QDir(QCoreApplication::applicationDirPath()).filePath("klippit-record.exe");

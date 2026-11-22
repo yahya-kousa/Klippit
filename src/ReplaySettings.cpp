@@ -48,7 +48,17 @@ QStringList replaySettingsArguments()
     return args;
 }
 
-void editReplaySettings(QWidget &parent)
+bool storeReplayHotkey(const QString &shortcut)
+{
+    QSettings settings("Klippit", "Klippit");
+    auto values = settings.value(settingsKey).toMap();
+    values.insert("shortcut", shortcut);
+    settings.setValue(settingsKey, values);
+    settings.sync();
+    return settings.status() == QSettings::NoError;
+}
+
+std::optional<QString> editReplaySettings(QWidget &parent)
 {
     const auto settings = load();
     QDialog dialog(&parent);
@@ -91,7 +101,7 @@ void editReplaySettings(QWidget &parent)
     advanced->hide();
     QObject::connect(showAdvanced, &QCheckBox::toggled, advanced, &QWidget::setVisible);
 
-    auto *message = new QLabel("Changes apply the next time replay starts.");
+    auto *message = new QLabel("The save hotkey updates immediately. Other changes apply the next time replay starts.");
     message->setWordWrap(true);
     layout->addWidget(message);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
@@ -109,12 +119,16 @@ void editReplaySettings(QWidget &parent)
             return;
         }
         QSettings stored("Klippit", "Klippit");
-        stored.setValue(settingsKey, QVariantMap{{"history", history->value()}, {"shortcut", key},
+        // Leave the previous hotkey persisted until the controller applies the change.
+        stored.setValue(settingsKey, QVariantMap{{"history", history->value()}, {"shortcut", settings.shortcut},
                         {"audio", audio->currentIndex()}, {"mic", device},
                         {"fps", fps->value()}, {"bitrate", bitrate->value()}});
         stored.sync();
         if (stored.status() == QSettings::NoError) dialog.accept();
         else message->setText("Could not save replay settings.");
     });
-    dialog.exec();
+    if (dialog.exec() != QDialog::Accepted) return {};
+    const auto key = shortcut->keySequence().toString(QKeySequence::PortableText);
+    if (key == settings.shortcut) return {};
+    return key;
 }

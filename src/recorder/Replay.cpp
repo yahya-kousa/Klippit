@@ -18,29 +18,63 @@
 #include <conio.h>
 #include <io.h>
 #include <cstdio>
+
+namespace {
+constexpr int saveHotkeyId = 1;
+constexpr int stopHotkeyId = 2;
+constexpr int alternateSaveHotkeyId = 3;
+
+bool registerSaveHotkey(int id, const ReplayHotkey &hotkey)
+{
+    UINT modifiers = MOD_NOREPEAT;
+    if (hotkey.modifiers & ReplayHotkey::Ctrl) modifiers |= MOD_CONTROL;
+    if (hotkey.modifiers & ReplayHotkey::Alt) modifiers |= MOD_ALT;
+    if (hotkey.modifiers & ReplayHotkey::Shift) modifiers |= MOD_SHIFT;
+    return RegisterHotKey(nullptr, id, modifiers, hotkey.key);
+}
+}
 #endif
 
 int recordReplay(QStringList args, const QString &firstPath, bool desktop, int historySeconds, qint64 bufferBytes, bool managed, const QString &saveHotkey)
 {
+    QString activeHotkey = saveHotkey;
 #ifdef Q_OS_WIN
-    const auto hotkey = parseReplayHotkey(saveHotkey);
+    auto hotkey = parseReplayHotkey(saveHotkey);
     if (!hotkey) return 2;
-    UINT modifiers = MOD_NOREPEAT;
-    if (hotkey->modifiers & ReplayHotkey::Ctrl) modifiers |= MOD_CONTROL;
-    if (hotkey->modifiers & ReplayHotkey::Alt) modifiers |= MOD_ALT;
-    if (hotkey->modifiers & ReplayHotkey::Shift) modifiers |= MOD_SHIFT;
-    if (!RegisterHotKey(nullptr, 1, modifiers, hotkey->key)) {
+    int activeHotkeyId = saveHotkeyId;
+    if (!registerSaveHotkey(activeHotkeyId, *hotkey)) {
         const DWORD error = GetLastError();
         QTextStream(stderr) << "Could not register save hotkey " << saveHotkey
                             << ". Choose another shortcut. Windows error " << error << Qt::endl;
         return 1;
     }
-    const auto releaseSave = qScopeGuard([] { UnregisterHotKey(nullptr, 1); });
-    if (!RegisterHotKey(nullptr, 2, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_END)) {
+    const auto releaseSave = qScopeGuard([&] { UnregisterHotKey(nullptr, activeHotkeyId); });
+    if (!RegisterHotKey(nullptr, stopHotkeyId, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_END)) {
         QTextStream(stderr) << "Could not register stop hotkey Ctrl+Shift+End." << Qt::endl;
         return 1;
     }
-    const auto releaseStop = qScopeGuard([] { UnregisterHotKey(nullptr, 2); });
+    const auto releaseStop = qScopeGuard([] { UnregisterHotKey(nullptr, stopHotkeyId); });
+    auto changeHotkey = [&](const QString &requested) {
+        const auto replacement = parseReplayHotkey(requested);
+        QString detail;
+        if (!replacement) {
+            detail = "Invalid save hotkey.";
+        } else if (replacement != hotkey) {
+            const int newId = activeHotkeyId == saveHotkeyId ? alternateSaveHotkeyId : saveHotkeyId;
+            if (registerSaveHotkey(newId, *replacement)) {
+                UnregisterHotKey(nullptr, activeHotkeyId);
+                activeHotkeyId = newId;
+                hotkey = replacement;
+            } else {
+                detail = QString("Windows could not register %1. Still using %2.")
+                    .arg(requested, activeHotkey);
+            }
+        }
+        if (detail.isEmpty()) activeHotkey = requested;
+        const QJsonObject event{{"event", detail.isEmpty() ? "save_hotkey_changed" : "save_hotkey_rejected"},
+                                {"requested", requested}, {"save_hotkey", activeHotkey}, {"detail", detail}};
+        QTextStream(stdout) << QJsonDocument(event).toJson(QJsonDocument::Compact) << Qt::endl;
+    };
 #endif
     Replay replay(firstPath, bufferBytes, historySeconds);
     QProcess capture;
@@ -67,13 +101,31 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
     // Read only from an interactive terminal, including one shared with the benchmark runner.
     const bool consoleInput = !managed && _isatty(_fileno(stdin)) != 0;
     const HANDLE controllerInput = managed ? GetStdHandle(STD_INPUT_HANDLE) : nullptr;
+    QByteArray commands;
 #endif
     QObject::connect(&controls, &QTimer::timeout, [&]{
 #ifdef Q_OS_WIN
         // The tray owns the write end. EOF also stops capture if the tray exits.
-        if (!stopping && managed &&
-            !PeekNamedPipe(controllerInput, nullptr, 0, nullptr, nullptr, nullptr)) {
-            stopping = true;
+        if (!stopping && managed) {
+            DWORD available = 0;
+            if (!PeekNamedPipe(controllerInput, nullptr, 0, nullptr, &available, nullptr)) {
+                stopping = true;
+            } else if (available > 0) {
+                char bytes[128];
+                DWORD read = 0;
+                if (ReadFile(controllerInput, bytes, qMin(available, DWORD(sizeof(bytes))), &read, nullptr)) {
+                    commands.append(bytes, read);
+                    qsizetype delimiter;
+                    while ((delimiter = commands.indexOf('\n')) >= 0) {
+                        if (commands.startsWith("hotkey "))
+                            changeHotkey(QString::fromUtf8(commands.constData() + 7, delimiter - 7));
+                        commands.remove(0, delimiter + 1);
+                    }
+                    if (commands.size() > 128) commands.clear();
+                } else {
+                    stopping = true;
+                }
+            }
         }
         if (!stopping && consoleInput && _kbhit()) {
             const int key = _getch();
@@ -87,7 +139,7 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
         if (managed && !stopping && valid && !readyReported && replay.hasHistory() &&
             capture.state() == QProcess::Running) {
             readyReported = true;
-            const QJsonObject event{{"event", "replay_ready"}, {"save_hotkey", saveHotkey}};
+            const QJsonObject event{{"event", "replay_ready"}, {"save_hotkey", activeHotkey}};
             QTextStream(stdout) << QJsonDocument(event).toJson(QJsonDocument::Compact) << Qt::endl;
         }
         if (desktop && !stopping && helper.state() == QProcess::NotRunning &&
@@ -121,18 +173,19 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
         Replay &replay;
 
         bool &stopping;
-        Keys(Replay &r, bool &s) : replay(r), stopping(s) {}
+        int &activeHotkeyId;
+        Keys(Replay &r, bool &s, int &id) : replay(r), stopping(s), activeHotkeyId(id) {}
         bool nativeEventFilter(const QByteArray &, void *message, qintptr *) override {
             auto *msg = static_cast<MSG *>(message);
             if (msg->message != WM_HOTKEY) return false;
-            if (msg->wParam == 1 && !stopping) replay.request();
-            if (msg->wParam == 2 && !stopping) {
+            if (msg->wParam == static_cast<WPARAM>(activeHotkeyId) && !stopping) replay.request();
+            if (msg->wParam == stopHotkeyId && !stopping) {
                 stopping = true;
                 qInfo("Stop hotkey received.");
             }
             return true;
         }
-    } keys(replay, stopping);
+    } keys(replay, stopping, activeHotkeyId);
     QCoreApplication::instance()->installNativeEventFilter(&keys);
 #endif
     const int result = QCoreApplication::exec();

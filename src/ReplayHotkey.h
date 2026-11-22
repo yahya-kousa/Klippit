@@ -11,6 +11,7 @@ struct ReplayHotkey {
     unsigned modifiers = 0;
     // Windows virtual-key code. Alphanumeric keys match ASCII.
     unsigned key = 0;
+    bool operator==(const ReplayHotkey &) const = default;
 };
 
 inline std::optional<ReplayHotkey> parseReplayHotkey(const QString &text)
