@@ -2,8 +2,15 @@
 #include "ReplayHotkey.h"
 
 #include <QtWidgets>
+#include <QHash>
+#include <QProcess>
+#include <QRegularExpression>
 #include <QSettings>
 #include <algorithm>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 namespace {
 enum Audio { Desktop, VideoOnly, Mixed, Separate };
@@ -15,7 +22,40 @@ struct Settings {
     QString shortcut = defaultReplayHotkey;
     Audio audio = Desktop;
     QString mic;
+    QString micLabel;
 };
+
+struct AudioDevice {
+    QString name;
+    QString id;
+};
+
+QList<AudioDevice> directShowAudioDevices(const QByteArray &log)
+{
+    static const QRegularExpression prefix(R"(^\[[^\]]+ @ [^\]]+\]\s*)");
+    static const QRegularExpression device(R"re(^"(.*)"(?: \(([^)]*)\))?$)re");
+    static const QRegularExpression alternative(R"re(^Alternative name "(.*)"$)re");
+    QList<AudioDevice> devices;
+    bool audioSection = false;
+    bool lastWasAudio = false;
+    for (auto line : QString::fromUtf8(log).split('\n')) {
+        line.remove(prefix);
+        line = line.trimmed();
+        if (const auto alias = alternative.match(line); alias.hasMatch() && lastWasAudio) {
+            devices.last().id = alias.captured(1);
+        } else if (const auto entry = device.match(line); entry.hasMatch()) {
+            const auto type = entry.captured(2);
+            lastWasAudio = type == "audio" || (type.isEmpty() && audioSection);
+            if (lastWasAudio) devices.append({entry.captured(1), entry.captured(1)});
+        } else {
+            // Older builds list the device types in separate sections.
+            if (line.startsWith("DirectShow audio devices")) audioSection = true;
+            if (line.startsWith("DirectShow video devices")) audioSection = false;
+            lastWasAudio = false;
+        }
+    }
+    return devices;
+}
 
 constexpr auto settingsKey = "replay/options";
 
@@ -30,6 +70,7 @@ Settings load()
     const auto shortcut = values.value("shortcut").toString();
     if (parseReplayHotkey(shortcut)) result.shortcut = shortcut;
     result.mic = values.value("mic").toString().trimmed();
+    result.micLabel = values.value("mic_label", result.mic).toString();
     const int audio = values.value("audio", Desktop).toInt();
     if (audio == VideoOnly || ((audio == Mixed || audio == Separate) && !result.mic.isEmpty()))
         result.audio = Audio(audio);
@@ -79,15 +120,106 @@ std::optional<QString> editReplaySettings(QWidget &parent)
     auto *audio = new QComboBox;
     audio->addItems({"Desktop audio", "Video only", "Desktop and microphone mixed", "Desktop and microphone separate"});
     audio->setCurrentIndex(settings.audio);
-    auto *mic = new QLineEdit(settings.mic);
-    mic->setPlaceholderText("Exact DirectShow device name");
+    auto *mic = new QComboBox;
+    mic->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    mic->setMinimumContentsLength(24);
+    mic->setPlaceholderText("Select a microphone");
+    if (!settings.mic.isEmpty()) {
+        mic->addItem(settings.micLabel + " (saved)", settings.mic);
+        mic->setItemData(0, settings.micLabel, Qt::UserRole + 1);
+    }
+    auto *refresh = new QPushButton("Refresh");
+    auto *micRow = new QWidget;
+    auto *micLayout = new QHBoxLayout(micRow);
+    micLayout->setContentsMargins(0, 0, 0, 0);
+    micLayout->addWidget(mic, 1);
+    micLayout->addWidget(refresh);
+    auto *deviceStatus = new QLabel;
+    deviceStatus->setWordWrap(true);
     basic->addRow("Replay history", history);
     basic->addRow("Save hotkey", shortcut);
     basic->addRow("Audio", audio);
-    basic->addRow("Microphone", mic);
-    auto updateMic = [&] { mic->setEnabled(audio->currentIndex() >= Mixed); };
-    QObject::connect(audio, &QComboBox::currentIndexChanged, &dialog, updateMic);
-    updateMic();
+    basic->addRow("Microphone", micRow);
+    basic->addRow(deviceStatus);
+
+    QProcess deviceProbe;
+#ifdef Q_OS_WIN
+    deviceProbe.setCreateProcessArgumentsModifier([](auto *args) { args->flags |= CREATE_NO_WINDOW; });
+#endif
+    QTimer probeTimeout;
+    probeTimeout.setSingleShot(true);
+    bool searched = false;
+    bool timedOut = false;
+    auto updateMic = [&] {
+        const bool micMode = audio->currentIndex() >= Mixed;
+        const bool scanning = deviceProbe.state() != QProcess::NotRunning;
+        basic->setRowVisible(micRow, micMode);
+        basic->setRowVisible(deviceStatus, micMode && !deviceStatus->text().isEmpty());
+        mic->setEnabled(!scanning && mic->count() > 0);
+        refresh->setEnabled(!scanning);
+    };
+    auto refreshDevices = [&] {
+        if (deviceProbe.state() != QProcess::NotRunning) return;
+        searched = true;
+        timedOut = false;
+        deviceStatus->setText("Looking for microphones…");
+        deviceProbe.start("ffmpeg", {"-hide_banner", "-nostdin", "-f", "dshow",
+                                     "-list_devices", "true", "-i", "dummy"});
+        probeTimeout.start(5000);
+        updateMic();
+    };
+    QObject::connect(&probeTimeout, &QTimer::timeout, &dialog, [&] {
+        timedOut = true;
+        deviceProbe.kill();
+    });
+    QObject::connect(&deviceProbe, &QProcess::errorOccurred, &dialog, [&](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart) return;
+        probeTimeout.stop();
+        deviceStatus->setText("Could not start FFmpeg to list microphones.");
+        updateMic();
+    });
+    QObject::connect(&deviceProbe, &QProcess::finished, &dialog, [&](int, QProcess::ExitStatus exit) {
+        probeTimeout.stop();
+        // The dummy input can return nonzero after successfully printing the list.
+        const auto devices = directShowAudioDevices(deviceProbe.readAllStandardError());
+        const auto selected = mic->currentData().toString();
+        const auto previous = selected.isEmpty() ? settings.mic : selected;
+        const auto previousName = selected.isEmpty() ? settings.micLabel : mic->currentData(Qt::UserRole + 1).toString();
+        mic->clear();
+        int selection = -1;
+        QHash<QString, int> nameCount;
+        for (const auto &device : devices) ++nameCount[device.name];
+        QHash<QString, int> nextNumber;
+        for (const auto &device : devices) {
+            QString label = device.name;
+            if (nameCount.value(device.name) > 1) label += QString(" (%1)").arg(++nextNumber[device.name]);
+            const int row = mic->count();
+            mic->addItem(label, device.id);
+            mic->setItemData(row, device.name, Qt::UserRole + 1);
+            if (previous == device.id ||
+                (selection < 0 && nameCount.value(device.name) == 1 && previous == device.name)) selection = row;
+        }
+        if (selection < 0 && !previous.isEmpty()) {
+            selection = mic->count();
+            mic->addItem(previousName + " (unavailable)", previous);
+            mic->setItemData(selection, previousName, Qt::UserRole + 1);
+        }
+        mic->setCurrentIndex(selection);
+        if (timedOut || exit != QProcess::NormalExit)
+            deviceStatus->setText("Microphone scan did not finish. Try Refresh.");
+        else if (devices.isEmpty())
+            deviceStatus->setText("No microphones found. Connect one and click Refresh.");
+        else
+            deviceStatus->clear();
+        updateMic();
+    });
+    QObject::connect(refresh, &QPushButton::clicked, &dialog, refreshDevices);
+    auto audioChanged = [&] {
+        updateMic();
+        if (audio->currentIndex() >= Mixed && !searched) refreshDevices();
+    };
+    QObject::connect(audio, &QComboBox::currentIndexChanged, &dialog, audioChanged);
+    QTimer::singleShot(0, &dialog, audioChanged);
 
     auto *showAdvanced = new QCheckBox("Advanced");
     layout->addWidget(showAdvanced);
@@ -113,21 +245,28 @@ std::optional<QString> editReplaySettings(QWidget &parent)
             message->setText("Use Ctrl, Alt, or Shift with a letter, digit, or function key. Windows reserves F12.");
             return;
         }
-        const auto device = mic->text().trimmed();
+        const auto device = mic->currentData().toString();
         if (audio->currentIndex() >= Mixed && device.isEmpty()) {
-            message->setText("Enter the DirectShow name of the microphone.");
+            message->setText("Select a microphone. If it is missing, connect it and click Refresh.");
             return;
         }
         QSettings stored("Klippit", "Klippit");
         // Leave the previous hotkey persisted until the controller applies the change.
         stored.setValue(settingsKey, QVariantMap{{"history", history->value()}, {"shortcut", settings.shortcut},
-                        {"audio", audio->currentIndex()}, {"mic", device},
+                        {"audio", audio->currentIndex()}, {"mic", device.isEmpty() ? settings.mic : device},
+                        {"mic_label", device.isEmpty() ? settings.micLabel : mic->currentData(Qt::UserRole + 1).toString()},
                         {"fps", fps->value()}, {"bitrate", bitrate->value()}});
         stored.sync();
         if (stored.status() == QSettings::NoError) dialog.accept();
         else message->setText("Could not save replay settings.");
     });
-    if (dialog.exec() != QDialog::Accepted) return {};
+    const auto result = dialog.exec();
+    if (deviceProbe.state() != QProcess::NotRunning) {
+        deviceProbe.disconnect(&dialog);
+        deviceProbe.kill();
+        deviceProbe.waitForFinished();
+    }
+    if (result != QDialog::Accepted) return {};
     const auto key = shortcut->keySequence().toString(QKeySequence::PortableText);
     if (key == settings.shortcut) return {};
     return key;
