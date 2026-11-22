@@ -67,3 +67,14 @@ ffprobe -v error -select_streams a -show_entries stream=index,codec_name,sample_
 Expect two stereo, 48 kHz AAC streams in the second file. Switch audio tracks in a player to check desktop first and mic second. Trim and reopen an export. Listen for sync near both ends, then repeat after several minutes to check drift. Restart capture after changing the playback device. Wearing headphones and turning off microphone monitoring helps keep the two sources isolated.
 
 The benchmark runner accepts the same sound options. Record the endpoints, layout, and whether the mic was active for each run. Each track targets 192 kbit/s. Omitting audio options records video only. The existing `--audio-device` option still captures a single DirectShow recording device.
+
+## Measure desktop audio sync on Windows
+
+Generate a 20-second reference with simultaneous white flashes and 1 kHz tones. Use the same capture settings as the affected run, keep the mic quiet, and play the reference fullscreen on the captured display through the default playback device. Start the recorder first. From another PowerShell window run:
+
+```powershell
+py -3 benchmarks/check_av_sync.py make "$env:TEMP\klippit-sync.mkv"
+ffplay -fs -autoexit "$env:TEMP\klippit-sync.mkv"
+```
+
+Save during the black interval immediately after the fourth flash (about 15 seconds into playback). Stop the recorder after the save completes. Inspect the saved replay with `py -3 benchmarks/check_av_sync.py inspect sync-test.mkv`. Positive offsets mean the tone follows the flash. The audio detector uses 10 ms windows and the flash is sampled at the capture frame rate. This measures the entire playback and capture path for the desktop soundtrack. Separate microphone timing needs an independent reference.
