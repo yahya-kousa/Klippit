@@ -16,13 +16,12 @@ import time
 import psutil
 
 
-def measure(executable, directory, encoder, audio_device=None):
+def measure(executable, directory, encoder, audio_args=()):
     directory.mkdir(parents=True, exist_ok=False)
     clip = directory.resolve() / "replay.mkv"
     command = [str(executable.resolve()), "--replay", "--fps", "60", "--bitrate", "30",
                "--encoder", encoder, str(clip)]
-    if audio_device:
-        command.extend(["--audio-device", audio_device])
+    command.extend(audio_args)
     metadata = {
         "command": command, "platform": platform.platform(), "psutil": psutil.__version__,
         "executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
@@ -119,7 +118,11 @@ if __name__ == "__main__":
     parser.add_argument("--recorder", type=Path, default=Path("build-x64/klippit-record.exe"))
     parser.add_argument("--encoder", default="h264_nvenc",
                         choices=["h264_nvenc", "h264_amf", "h264_qsv"])
-    parser.add_argument("--audio-device", help="Windows recording endpoint used for game audio")
+    sources = parser.add_mutually_exclusive_group()
+    sources.add_argument("--audio-device", help="Single DirectShow recording endpoint")
+    sources.add_argument("--desktop-audio", action="store_true", help="Default playback endpoint")
+    sources.add_argument("--mic", help="DirectShow microphone to capture with desktop audio")
+    parser.add_argument("--separate-mic", action="store_true", help="Keep microphone on track two")
     parser.add_argument("--recover", action="store_true", help="summarize an earlier run's raw files")
     args = parser.parse_args()
     if args.recover:
@@ -129,4 +132,15 @@ if __name__ == "__main__":
         sys.exit(0)
     if args.directory.exists() or not args.recorder.is_file():
         parser.error("Choose a new run directory and an existing recorder executable.")
-    sys.exit(measure(args.recorder, args.directory, args.encoder, args.audio_device))
+    audio = []
+    if args.audio_device:
+        audio = ["--audio-device", args.audio_device]
+    elif args.mic:
+        audio = ["--mic", args.mic]
+    elif args.desktop_audio:
+        audio = ["--desktop-audio"]
+    if args.separate_mic:
+        if not args.mic:
+            parser.error("--separate-mic requires --mic")
+        audio.append("--separate-mic")
+    sys.exit(measure(args.recorder, args.directory, args.encoder, audio))

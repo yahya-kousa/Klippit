@@ -57,7 +57,7 @@ The editor and export workflow have been tested on CachyOS with a 1440p Overwatc
 
 ## Experimental Windows recorder
 
-A separate command-line target supports a 15-second recording or a RAM replay buffer with optional game audio and global save and stop hotkeys. The [recording benchmark](benchmarks/README.md) covers building it, inspecting the saved clip, and comparing game frame times across recorders. Windows gameplay and encoder compatibility still need hardware validation.
+A separate command-line target supports a 15-second recording or a RAM replay buffer with optional desktop and microphone audio and global save and stop hotkeys. On Windows, use `--desktop-audio` for sound from the default playback device or `--mic "device name"` for a shareable mix of desktop and microphone. Add `--separate-mic` to keep desktop on the first audio track and voice on the second for editing. The [recording benchmark](benchmarks/README.md) covers building it, inspecting the saved clip, and comparing game frame times across recorders. Windows gameplay and encoder compatibility still need hardware validation.
 
 ## Third-party acknowledgments
 

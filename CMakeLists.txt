@@ -35,6 +35,6 @@ if(BUILD_TESTING)
 endif()
 
 if(WIN32)
-    add_executable(klippit-record src/recorder/main.cpp src/recorder/Replay.cpp src/recorder/ReplayBuffer.cpp)
-    target_link_libraries(klippit-record PRIVATE Qt6::Core user32)
+    add_executable(klippit-record src/recorder/main.cpp src/recorder/Loopback.cpp src/recorder/Replay.cpp src/recorder/ReplayBuffer.cpp)
+    target_link_libraries(klippit-record PRIVATE Qt6::Core user32 ole32)
 endif()

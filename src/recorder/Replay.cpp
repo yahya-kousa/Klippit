@@ -1,5 +1,6 @@
 #include "Replay.h"
 #include "ReplayBuffer.h"
+#include "Loopback.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -13,7 +14,7 @@
 #include <cstdio>
 #endif
 
-int recordReplay(QStringList args, const QString &firstPath)
+int recordReplay(QStringList args, const QString &firstPath, bool desktop)
 {
     Replay replay(firstPath);
     QProcess capture;
@@ -26,6 +27,8 @@ int recordReplay(QStringList args, const QString &firstPath)
     });
     args << "-movflags" << "empty_moov+frag_keyframe+default_base_moof"
          << "-video_track_timescale" << QString::number(replayTimescale) << "-f" << "mp4" << "pipe:1";
+    QProcess helper;
+    if (desktop && !startLoopback(helper, capture)) return 1;
     capture.start("ffmpeg", args);
     if (!capture.waitForStarted()) { qWarning() << capture.errorString(); return 1; }
     QTimer controls;
@@ -56,6 +59,11 @@ int recordReplay(QStringList args, const QString &firstPath)
             }
         }
 #endif
+        if (desktop && !stopping && helper.state() == QProcess::NotRunning &&
+            (helper.exitStatus() != QProcess::NormalExit || helper.exitCode() != 0)) {
+            valid = false;
+            capture.kill();
+        }
         if (stopping && !replay.waitingForFragment() && capture.state() == QProcess::Running)
             capture.kill();
         if (capture.state() == QProcess::NotRunning && !replay.saving()) {
@@ -89,5 +97,9 @@ int recordReplay(QStringList args, const QString &firstPath)
     UnregisterHotKey(nullptr, 1);
     UnregisterHotKey(nullptr, 2);
 #endif
+    if (desktop && helper.state() != QProcess::NotRunning && !helper.waitForFinished(1000)) {
+        helper.kill();
+        helper.waitForFinished();
+    }
     return result;
 }

@@ -49,18 +49,21 @@ summary.json contains each successful request-to-file-publication latency, its m
 
 ## Game audio trial on Windows
 
-To test Klippit with sound, list DirectShow recording endpoints:
+Use `--desktop-audio` to capture whatever plays through the default Windows output, including other apps routed there. Select the game's playback device as the default before starting. For desktop plus microphone, list the recording devices and substitute the exact microphone name below.
 
 ```powershell
 ffmpeg -hide_banner -list_devices true -f dshow -i dummy
+$mic = 'Microphone (USB PnP Audio Device)'
+.\build-x64\klippit-record.exe --replay --mic "$mic" mixed.mkv
 ```
 
-Choose a playback-loopback endpoint (often named Stereo Mix) that carries the game's output. Pass its exact listed name to the rebuilt recorder, for example:
+Speak and trigger a visible game sound. After at least 15 seconds, save with **Ctrl+Shift+F9** and stop with **Ctrl+Shift+End**. Open the clip in Klippit. Both sounds should play together. Repeat with the editing layout and a fresh filename.
 
 ```powershell
-.\build-x64\klippit-record.exe --replay --audio-device "Stereo Mix (Realtek(R) Audio)" audio-trial.mkv
+.\build-x64\klippit-record.exe --replay --mic "$mic" --separate-mic separate.mkv
+ffprobe -v error -select_streams a -show_entries stream=index,codec_name,sample_rate,channels -of compact separate.mkv
 ```
 
-The endpoint is driver-dependent; a microphone captures room sound. If the list has no playback-loopback endpoint for the active output, this version needs an enabled or routed loopback recording device. Omitting the option uses the video-only baseline. The benchmark runner accepts the same --audio-device option.
+Expect two stereo, 48 kHz AAC streams in the second file. Switch audio tracks in a player to check desktop first and mic second. Trim and reopen an export. Listen for sync near both ends, then repeat after several minutes to check drift. Restart capture after changing the playback device. Wearing headphones and turning off microphone monitoring helps keep the two sources isolated.
 
-Save twice during a visible action with a distinct sound, such as firing a weapon. Open both clips, check sound alignment at the beginning and end, then trim and reopen one export. Record the endpoint and audio encoding settings (stereo AAC, 48 kHz, 192 kbit/s) before repeating the performance trials.
+The benchmark runner accepts the same sound options. Record the endpoints, layout, and whether the mic was active for each run. Each track targets 192 kbit/s. Omitting audio options records video only. The existing `--audio-device` option still captures a single DirectShow recording device.
