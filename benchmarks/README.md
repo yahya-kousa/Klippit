@@ -78,3 +78,5 @@ ffplay -fs -autoexit "$env:TEMP\klippit-sync.mkv"
 ```
 
 Save during the black interval immediately after the fourth flash (about 15 seconds into playback). Stop the recorder after the save completes. Inspect the saved replay with `py -3 benchmarks/check_av_sync.py inspect sync-test.mkv`. Positive offsets mean the tone follows the flash. The audio detector uses 10 ms windows and the flash is sampled at the capture frame rate. This measures the entire playback and capture path for the desktop soundtrack. Separate microphone timing needs an independent reference.
+
+Generate the reference once and reuse it for later captures. Keep the saved replay until inspection succeeds. The analyzer matches at least three common cues by their spacing and reports only those pairs. If the sequence is ambiguous, it prints the detected onset times for diagnosis.
