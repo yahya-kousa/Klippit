@@ -57,7 +57,10 @@ int recordReplay(QStringList args, const QString &firstPath)
             auto *msg = static_cast<MSG *>(message);
             if (msg->message != WM_HOTKEY) return false;
             if (msg->wParam == 1 && !stopping) replay.request();
-            if (msg->wParam == 2) stopping = true;
+            if (msg->wParam == 2 && !stopping) {
+                stopping = true;
+                qInfo("Stop hotkey received.");
+            }
             return true;
         }
     } keys(replay, stopping);

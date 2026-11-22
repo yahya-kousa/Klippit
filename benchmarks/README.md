@@ -34,3 +34,15 @@ Choose a fresh filename. With the game in the foreground, press **Ctrl+Shift+F9*
 FFmpeg encodes continuously and sends keyframe-aligned fragments through a pipe. Klippit retains roughly 15 seconds plus keyframe alignment, subject to a 96 MiB encoded-history cap. A save includes the fragment in progress when you pressed the key, so publication can wait about one keyframe interval. Only requested saves are written to disk. A second FFmpeg process stream-copies the snapshot to MKV. Snapshot data, incoming fragments, process buffers and encoder memory are additional to the history cap.
 
 For a hardware smoke test, play for 30 seconds, save during motion, keep playing, and save again five seconds later. Check both clips in the trimmer and record save latency and peak memory including both FFmpeg processes. The automated replay_buffer test checks time and byte eviction and consecutive decoded frames on synthetic input.
+
+## Measure a RAM replay session
+
+Install the benchmark-only Python dependency with `py -3 -m pip install psutil`. From the Windows project folder run:
+
+```powershell
+py -3 benchmarks/measure_replay.py "$env:TEMP/klippit-replay-run-01"
+```
+
+Use a new directory for each run. The default command uses the existing build-x64 recorder and pins NVENC at 60 fps and 30 Mbit/s. Select another supported encoder with --encoder. Warm up for 30 seconds, save five times at least five seconds apart with Ctrl+Shift+F9, then stop with Ctrl+Shift+F10. Keep the game in the foreground and record the scene, resolution, GPU and driver alongside the reports.
+
+summary.json contains each successful request-to-file-publication latency, its median, and sampled working-set peaks in bytes. Divide by 1,048,576 for MiB. memory.csv retains per-process samples for the recorder and its children. The sampler targets 100 ms and can miss brief peaks. Shared pages may be counted across processes. Per-save windows are estimated from receipt of the completion message and the recorder's own elapsed time. A null peak means no sample fell in that window. recorder.log retains the timing messages. This run measures recorder memory and save latency; use the separate PresentMon procedure for game frame times.
