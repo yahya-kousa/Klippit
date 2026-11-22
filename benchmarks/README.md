@@ -86,3 +86,13 @@ Save during the black interval immediately after the fourth flash (about 15 seco
 Generate the reference once and reuse it for later captures. Keep the saved replay until inspection succeeds. The analyzer matches at least three common cues by their spacing and reports only those pairs. If the sequence is ambiguous, it prints the detected onset times for diagnosis.
 
 To test whether desktop audio and video acquire different time origins during startup, run `check_capture_start.py early REFERENCE OUTPUT.mkv` and then `check_capture_start.py video-first REFERENCE OTHER.mkv` with Python. This Windows diagnostic uses display 0, 60 fps, 30 Mbit/s H.264 NVENC and the recorder's desktop loopback helper. Each run plays the reference and reports sync automatically. Compare the signed offsets between these two runs. The printed video-input announcement time includes FFmpeg initialization and probing.
+
+## Idle desktop audio helper
+
+With one tray replay buffer active, select desktop audio only, leave the default playback device idle, and let capture settle for ten seconds. From the project directory in Windows Command Prompt, run:
+
+```bat
+py -3 benchmarks\measure_loopback.py > "%TEMP%\klippit-loopback-polling.json"
+```
+
+The five-minute measurement attaches to the existing helper by process name and command-line role. It reads cumulative CPU and context-switch counters twice. A value of 1 under cpu_percent_of_one_core means 1% of one logical CPU. Context switches include pipe and scheduler activity and cannot isolate Sleep calls. Record the playback device, power mode and whether a remote session was active alongside the report. Keep these conditions the same for comparisons. This measures the helper process only. Audio continuity and sync require a separate capture test.
