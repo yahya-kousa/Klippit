@@ -111,13 +111,13 @@ int main(int argc, char **argv)
     QStringList inputs = input;
     if (desktop || cli.isSet("audio-device")) {
         if (desktop) {
-            inputs << "-thread_queue_size" << "128" << "-probesize" << "32" << "-ignore_length" << "1"
+            inputs << "-probesize" << "32" << "-ignore_length" << "1"
                    << "-f" << "wav" << "-i" << "pipe:0";
         } else {
             if (audioDevice.trimmed().isEmpty()) cli.showHelp(2);
             inputs << "-f" << "dshow" << "-i" << "audio=" + audioDevice;
         }
-        if (mic) inputs << "-thread_queue_size" << "128" << "-f" << "dshow"
+        if (mic) inputs << "-f" << "dshow"
                         << "-i" << "audio=" + cli.value("mic");
         inputs << "-map" << "0:v:0";
         if (mic && !separate) {
