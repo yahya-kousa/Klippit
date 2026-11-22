@@ -1,5 +1,8 @@
 #include "Editor.h"
 #include <QApplication>
+#include <QTimer>
+#include <QWindow>
+#include <cstdio>
 #ifdef Q_OS_WIN
 #include "ReplayTray.h"
 #include <QAbstractNativeEventFilter>
@@ -37,6 +40,8 @@ private:
 
 int main(int argc, char **argv)
 {
+    const bool smoke = argc == 2 && QByteArrayView(argv[1]) == "--smoke-test-editor";
+    if (smoke) std::fputs("Starting editor smoke test\n", stderr);
 #ifdef Q_OS_WIN
 #ifdef KLIPPIT_PACKAGED
     // Installer hooks must run before the single-instance check.
@@ -53,10 +58,12 @@ int main(int argc, char **argv)
     const DWORD instanceStatus = GetLastError();
     const auto release = qScopeGuard([instance] { if (instance) CloseHandle(instance); });
     if (!reopenMessage || !instance) {
+        if (smoke) return 1;
         MessageBoxW(nullptr, L"Could not initialize Klippit's window.", L"Klippit", MB_OK | MB_ICONERROR);
         return 1;
     }
     if (instanceStatus == ERROR_ALREADY_EXISTS) {
+        if (smoke) return 1;
         if (signIn) return 0;
         return PostMessageW(HWND_BROADCAST, reopenMessage, 0, 0) ? 0 : 1;
     }
@@ -69,6 +76,7 @@ int main(int argc, char **argv)
     const QString path = appFolder + ';' + qEnvironmentVariable("PATH");
     SetEnvironmentVariableW(L"PATH", reinterpret_cast<LPCWSTR>(path.utf16()));
 #endif
+    if (smoke) std::fputs("Qt application initialized\n", stderr);
     Editor editor;
 #ifdef Q_OS_WIN
     ReopenEditor reopen(editor, reopenMessage);
@@ -79,5 +87,17 @@ int main(int argc, char **argv)
 #else
     editor.show();
 #endif
+    if (smoke) {
+        QTimer::singleShot(0, &editor, [&editor] {
+            const auto *window = editor.windowHandle();
+            if (!editor.isVisible() || !window || !window->isVisible() || !window->winId()) {
+                std::fputs("Editor window was not created and shown\n", stderr);
+                QCoreApplication::exit(1);
+                return;
+            }
+            std::fputs("Editor window ready\n", stderr);
+            QCoreApplication::exit(0);
+        });
+    }
     return app.exec();
 }

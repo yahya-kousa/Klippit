@@ -90,17 +90,18 @@ jobs:
           if (!($filters -match '\bddagrab\b')) { throw 'Packaged FFmpeg has no desktop capture filter' }
 
           Write-Host "Opening staged editor window"
-          $editor = Start-Process ./klippit.exe -PassThru
+          $log = Join-Path $env:RUNNER_TEMP 'klippit-editor-stderr.txt'
+          $env:QT_FORCE_STDERR_LOGGING = '1'
+          $editor = Start-Process ./klippit.exe -ArgumentList '--smoke-test-editor' -PassThru -RedirectStandardError $log
           try {
-            $deadline = [DateTime]::UtcNow.AddSeconds(20)
-            do {
-              Start-Sleep -Milliseconds 250
-              $editor.Refresh()
-              if ($editor.HasExited) { throw "Editor exited with code $($editor.ExitCode)" }
-            } until ($editor.MainWindowTitle -eq 'Klippit' -or [DateTime]::UtcNow -gt $deadline)
-            if ($editor.MainWindowTitle -ne 'Klippit') { throw 'Editor window did not open' }
+            if (!$editor.WaitForExit(20000)) { throw 'Editor startup timed out' }
+            if ($editor.ExitCode -ne 0) { throw "Editor exited with code $($editor.ExitCode)" }
+            if (!(Select-String -LiteralPath $log -Pattern '^Editor window ready$' -Quiet)) {
+              throw 'Editor exited before confirming its window was ready'
+            }
           } finally {
             if (!$editor.HasExited) { $editor.Kill(); $editor.WaitForExit() }
+            Get-Content -LiteralPath $log
           }
 
       - name: Create local-test installer
