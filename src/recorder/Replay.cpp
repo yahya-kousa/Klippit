@@ -4,7 +4,9 @@
 
 #include <QCoreApplication>
 #include <QDebug>
+#include <QElapsedTimer>
 #include <QTimer>
+#include <QTextStream>
 
 #ifdef Q_OS_WIN
 #include <QAbstractNativeEventFilter>
@@ -24,6 +26,8 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
             valid = replay.ingest(capture.read(256 * 1024));
         if (!valid) { qWarning("Invalid replay fragment"); capture.kill(); }
     });
+    // A failed video input must stop the pipeline even when audio is still live.
+    args.prepend("-xerror");
     args << "-movflags" << "empty_moov+frag_keyframe+default_base_moof"
          << "-video_track_timescale" << QString::number(replayTimescale) << "-f" << "mp4" << "pipe:1";
     QProcess helper;
@@ -41,6 +45,8 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
 #endif
     qInfo("Replay active: Ctrl+Shift+F9 saves, Ctrl+Shift+End stops. You can also press Q in this console.");
     bool stopping = false;
+    bool stoppedCapture = false;
+    QElapsedTimer stopWait;
 #ifdef Q_OS_WIN
     // Read only from an interactive terminal, including one shared with the benchmark runner.
     const bool consoleInput = _isatty(_fileno(stdin)) != 0;
@@ -61,10 +67,23 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
             valid = false;
             capture.kill();
         }
-        if (stopping && !replay.waitingForFragment() && capture.state() == QProcess::Running)
-            capture.kill();
+        if (stopping && capture.state() == QProcess::Running) {
+            if (!stopWait.isValid()) stopWait.start();
+            if (!replay.waitingForFragment() || stopWait.hasExpired(5000)) {
+                stoppedCapture = true;
+                capture.kill();
+            }
+        }
         if (capture.state() == QProcess::NotRunning && !replay.saving()) {
-            QCoreApplication::exit(valid && (stopping || capture.exitCode() == 0) ? 0 : 1);
+            const bool success = valid && (stoppedCapture ||
+                (capture.exitStatus() == QProcess::NormalExit && capture.exitCode() == 0));
+            if (replay.waitingForFragment()) {
+                QTextStream(stderr) << "Replay stopped before the requested clip could be saved." << Qt::endl;
+            }
+            if (!success) {
+                QTextStream(stderr) << "Replay capture failed. See FFmpeg diagnostics above." << Qt::endl;
+            }
+            QCoreApplication::exit(success && !replay.waitingForFragment() ? 0 : 1);
         }
     });
     controls.start(50);
