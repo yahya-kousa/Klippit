@@ -1,6 +1,8 @@
 #include "Loopback.h"
 #include <QCoreApplication>
 #include <QDebug>
+#include <QDeadlineTimer>
+#include <cstdio>
 #include <QtEndian>
 
 #ifdef Q_OS_WIN
@@ -145,12 +147,56 @@ int streamLoopback()
     return 1;
 }
 
-bool startLoopback(QProcess &helper, QProcess &ffmpeg)
+bool startCapture(QProcess &ffmpeg, const QStringList &args, QProcess *loopback)
 {
-    helper.setProcessChannelMode(QProcess::ForwardedErrorChannel);
-    helper.setStandardOutputProcess(&ffmpeg);
-    helper.start(QCoreApplication::applicationFilePath(), {"--internal-loopback"});
-    if (helper.waitForStarted()) return true;
-    qWarning() << helper.errorString();
+    if (loopback) {
+        loopback->setProcessChannelMode(QProcess::ForwardedErrorChannel);
+        loopback->setStandardOutputProcess(&ffmpeg);
+        ffmpeg.setReadChannel(QProcess::StandardError);
+    } else {
+        ffmpeg.setProcessChannelMode(QProcess::ForwardedErrorChannel);
+    }
+
+    ffmpeg.start("ffmpeg", args);
+    if (!ffmpeg.waitForStarted()) {
+        qWarning().noquote() << ffmpeg.errorString();
+        return false;
+    }
+    if (!loopback) return true;
+
+    // FFmpeg reports input 0 before trying to read the WAV header on stdin.
+    // Handle split stderr lines, and bound the wait if that diagnostic changes.
+    QDeadlineTimer deadline(10000);
+    bool videoReady = false;
+    while (!deadline.hasExpired() && !videoReady) {
+        while (ffmpeg.canReadLine()) {
+            const QByteArray line = ffmpeg.readLine();
+            std::fwrite(line.constData(), 1, line.size(), stderr);
+            if (line.startsWith("Input #0, lavfi,")) {
+                videoReady = true;
+                break;
+            }
+        }
+        if (!videoReady && (ffmpeg.state() == QProcess::NotRunning ||
+                            !ffmpeg.waitForReadyRead(int(deadline.remainingTime())))) break;
+    }
+    ffmpeg.setReadChannel(QProcess::StandardOutput);
+    auto forwardErrors = [&ffmpeg] {
+        const QByteArray bytes = ffmpeg.readAllStandardError();
+        std::fwrite(bytes.constData(), 1, bytes.size(), stderr);
+    };
+    QObject::connect(&ffmpeg, &QProcess::readyReadStandardError, &ffmpeg, forwardErrors);
+    forwardErrors();
+    if (videoReady) {
+        loopback->start(QCoreApplication::applicationFilePath(), {"--internal-loopback"});
+        if (loopback->waitForStarted()) return true;
+        qWarning().noquote() << loopback->errorString();
+    } else {
+        std::fputs("FFmpeg did not announce desktop video input 0; stopping capture.\n", stderr);
+    }
+    if (ffmpeg.state() != QProcess::NotRunning) {
+        ffmpeg.kill();
+        ffmpeg.waitForFinished();
+    }
     return false;
 }

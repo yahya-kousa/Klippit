@@ -18,7 +18,6 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop)
 {
     Replay replay(firstPath);
     QProcess capture;
-    capture.setProcessChannelMode(QProcess::ForwardedErrorChannel);
     bool valid = true;
     QObject::connect(&capture, &QProcess::readyReadStandardOutput, [&]{
         while (capture.bytesAvailable() && valid)
@@ -28,9 +27,7 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop)
     args << "-movflags" << "empty_moov+frag_keyframe+default_base_moof"
          << "-video_track_timescale" << QString::number(replayTimescale) << "-f" << "mp4" << "pipe:1";
     QProcess helper;
-    if (desktop && !startLoopback(helper, capture)) return 1;
-    capture.start("ffmpeg", args);
-    if (!capture.waitForStarted()) { qWarning() << capture.errorString(); return 1; }
+    if (!startCapture(capture, args, desktop ? &helper : nullptr)) return 1;
     QTimer controls;
 #ifdef Q_OS_WIN
     if (!RegisterHotKey(nullptr, 1, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_F9) ||

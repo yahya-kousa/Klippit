@@ -18,14 +18,8 @@
 static bool run(const QStringList &args, int timeoutMs, bool desktop = false)
 {
     QProcess process;
-    process.setProcessChannelMode(QProcess::ForwardedErrorChannel);
     QProcess helper;
-    if (desktop && !startLoopback(helper, process)) return false;
-    process.start("ffmpeg", args);
-    if (!process.waitForStarted()) {
-        qWarning().noquote() << process.errorString();
-        return false;
-    }
+    if (!startCapture(process, args, desktop ? &helper : nullptr)) return false;
     if (!process.waitForFinished(timeoutMs)) {
         process.kill();
         process.waitForFinished();
@@ -100,7 +94,7 @@ int main(int argc, char **argv)
     }
     const QString capture = QString("ddagrab=output_idx=%1:framerate=%2:dup_frames=1")
                                 .arg(display).arg(fps);
-    const QStringList input{"-nostdin", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+    const QStringList input{"-f", "lavfi",
                             "-i", capture};
     QString encoder;
     QStringList args;
@@ -109,7 +103,7 @@ int main(int argc, char **argv)
                                   "-g", QString::number(fps), "-fps_mode:v", "passthrough"};
         // Preserve desktop capture timing between nominal frame ticks.
         if (candidate == "h264_nvenc") args << "-enc_time_base:v" << "demux";
-        if (run(input + args + QStringList{"-frames:v", "1", "-f", "null", "-"}, 10000)) {
+        if (run(QStringList{"-nostdin", "-hide_banner", "-loglevel", "error"} + input + args + QStringList{"-frames:v", "1", "-f", "null", "-"}, 10000)) {
             encoder = candidate;
             break;
         }
@@ -119,7 +113,8 @@ int main(int argc, char **argv)
         return 1;
     }
     const QString audioDevice = cli.value("audio-device");
-    QStringList inputs = input;
+    QStringList inputs{"-nostdin", "-hide_banner", "-nostats", "-loglevel", desktop ? "info" : "error"};
+    inputs += input;
     if (desktop || cli.isSet("audio-device")) {
         if (desktop) {
             inputs << "-probesize" << "32" << "-ignore_length" << "1"
