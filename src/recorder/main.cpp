@@ -68,11 +68,14 @@ int main(int argc, char **argv)
         {"fps", "Capture rate in frames per second (1-240)", "fps", "60"},
         {"bitrate", "Target video bitrate in Mbit/s (1-500)", "mbps", "30"},
     });
+    QCommandLineOption managed("managed");
+    managed.setFlags(QCommandLineOption::HiddenFromHelp);
+    cli.addOption(managed);
     cli.process(app);
     const int history = cli.value("history").toInt();
     const int configuredMiB = cli.value("buffer-mib").toInt();
     const bool replay = cli.isSet("replay");
-    if ((!replay && (cli.isSet("history") || cli.isSet("buffer-mib"))) ||
+    if ((!replay && (cli.isSet("history") || cli.isSet("buffer-mib") || cli.isSet(managed))) ||
         history < 1 || history > 300 ||
         (cli.isSet("buffer-mib") && (configuredMiB < 1 || configuredMiB > 2048)))
         cli.showHelp(2);
@@ -158,7 +161,7 @@ int main(int argc, char **argv)
         // Allow 25% headroom for audio, bitrate variation and GOP alignment.
         const qint64 estimate = (qint64(bitrate) * (history + 1) * 156250 + mib - 1) / mib;
         const qint64 limitMiB = cli.isSet("buffer-mib") ? configuredMiB : std::clamp<qint64>(estimate, 96, 2048);
-        return recordReplay(args, output.absoluteFilePath(), desktop, history, limitMiB * mib);
+        return recordReplay(args, output.absoluteFilePath(), desktop, history, limitMiB * mib, cli.isSet(managed));
     }
     QTemporaryDir staging(output.dir().filePath(".klippit-record-XXXXXX"));
     if (!staging.isValid()) {

@@ -16,6 +16,7 @@ public:
     bool ingest(const QByteArray &chunk);
     void request();
     bool waitingForFragment() const { return requestTimer.isValid(); }
+    bool hasHistory() const { return !ring.empty(); }
     bool saving() const { return !saves.empty(); }
 
 private:

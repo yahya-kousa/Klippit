@@ -31,7 +31,6 @@ class Editor : public QWidget {
 
     void open();
     void openFile(const QString &file);
-    void showClipQueue();
 
     void mark(bool first);
 
@@ -46,4 +45,5 @@ protected:
 
 public:
     Editor();
+    void showClipQueue();
 };

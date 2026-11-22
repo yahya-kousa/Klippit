@@ -16,7 +16,7 @@
 #include <cstdio>
 #endif
 
-int recordReplay(QStringList args, const QString &firstPath, bool desktop, int historySeconds, qint64 bufferBytes)
+int recordReplay(QStringList args, const QString &firstPath, bool desktop, int historySeconds, qint64 bufferBytes, bool managed)
 {
     Replay replay(firstPath, bufferBytes, historySeconds);
     QProcess capture;
@@ -33,6 +33,7 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
     QProcess helper;
     if (!startCapture(capture, args, desktop ? &helper : nullptr)) return 1;
     QTimer controls;
+    bool readyReported = false;
 #ifdef Q_OS_WIN
     if (!RegisterHotKey(nullptr, 1, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_F9) ||
         !RegisterHotKey(nullptr, 2, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_END)) {
@@ -49,10 +50,16 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
     QElapsedTimer stopWait;
 #ifdef Q_OS_WIN
     // Read only from an interactive terminal, including one shared with the benchmark runner.
-    const bool consoleInput = _isatty(_fileno(stdin)) != 0;
+    const bool consoleInput = !managed && _isatty(_fileno(stdin)) != 0;
+    const HANDLE controllerInput = managed ? GetStdHandle(STD_INPUT_HANDLE) : nullptr;
 #endif
     QObject::connect(&controls, &QTimer::timeout, [&]{
 #ifdef Q_OS_WIN
+        // The tray owns the write end. EOF also stops capture if the tray exits.
+        if (!stopping && managed &&
+            !PeekNamedPipe(controllerInput, nullptr, 0, nullptr, nullptr, nullptr)) {
+            stopping = true;
+        }
         if (!stopping && consoleInput && _kbhit()) {
             const int key = _getch();
             if (key == 0 || key == 0xe0) _getch(); // Consume extended key scan code.
@@ -62,6 +69,11 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
             }
         }
 #endif
+        if (managed && !stopping && valid && !readyReported && replay.hasHistory() &&
+            capture.state() == QProcess::Running) {
+            readyReported = true;
+            QTextStream(stdout) << R"({"event":"replay_ready"})" << Qt::endl;
+        }
         if (desktop && !stopping && helper.state() == QProcess::NotRunning &&
             (helper.exitStatus() != QProcess::NormalExit || helper.exitCode() != 0)) {
             valid = false;

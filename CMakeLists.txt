@@ -44,6 +44,7 @@ if(BUILD_TESTING)
 endif()
 
 if(WIN32)
+    target_sources(klippit PRIVATE src/ReplayTray.cpp src/ReplayTray.h)
     add_executable(klippit-record src/recorder/main.cpp src/recorder/Loopback.cpp src/recorder/Replay.cpp src/recorder/ReplayBuffer.cpp src/ClipQueue.cpp)
     target_include_directories(klippit-record PRIVATE src)
     target_link_libraries(klippit-record PRIVATE Qt6::Core user32 ole32)
