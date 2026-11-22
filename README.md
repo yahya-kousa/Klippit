@@ -59,6 +59,10 @@ The editor and export workflow have been tested on CachyOS with a 1440p Overwatc
 
 Build both Windows targets into the same folder, then open `klippit.exe`. In the Windows system tray, right-click Klippit and select **Start Replay**. The menu shows when recording starts and when the buffer has footage. Press **Ctrl+Shift+F9** to save, and open **Clips to Trim** from the tray when you want to edit. The tray uses desktop audio and the recorder's default history, and saves MKVs in **Videos → Klippit**. Closing the editor leaves the tray and recorder running. Launching Klippit again opens the existing editor. **Stop Replay** finishes accepted saves, and **Quit Klippit** also closes the tray. Use **Quit Klippit** before rebuilding on Windows.
 
+To launch minimized to the tray when you sign in, enable **Launch at Windows sign-in**. Enable **Start replay automatically** as well to fill the buffer whenever Klippit starts. Both options are off by default. Windows starts the app from the path registered when you enable the option. If you move the build, toggle **Launch at Windows sign-in** off and back on from the new copy.
+
+For sign-in launch, make sure Klippit works from Explorer. If Qt is only on your developer terminal's PATH, run `windeployqt build-x64\klippit.exe` from the matching Qt environment first. Put your FFmpeg and ffprobe executables beside Klippit or on your Windows user PATH. [Qt deployment documentation](https://doc.qt.io/qt-6/windows-deployment.html)
+
 
 A separate command-line target supports a 15-second recording or a RAM replay buffer with optional desktop and microphone audio and global save and stop hotkeys. On Windows, use `--desktop-audio` for sound from the default playback device or `--mic "device name"` for a shareable mix of desktop and microphone. Add `--separate-mic` to keep desktop on the first audio track and voice on the second for editing. The [recording benchmark](benchmarks/README.md) covers building it, inspecting the saved clip, and comparing game frame times across recorders. Windows gameplay and encoder compatibility still need hardware validation.
 

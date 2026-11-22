@@ -8,8 +8,10 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMessageBox>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QStyle>
+#include <QTimer>
 #include <QUuid>
 
 #ifdef Q_OS_WIN
@@ -38,6 +40,8 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
             QMessageBox::warning(&this->editor, "Recorder Error", diagnostics);
     });
     details->setVisible(false);
+    menu.addSeparator();
+    configureStartup();
     menu.addAction("Quit Klippit", this, [this] {
         if (QApplication::activeModalWidget() || !this->editor.close()) return;
         quitting = true;
@@ -91,6 +95,47 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
     tray.setIcon(QApplication::style()->standardIcon(QStyle::SP_MediaPlay));
     tray.setContextMenu(&menu);
     tray.show();
+}
+
+void ReplayTray::configureStartup()
+{
+    static constexpr auto runKey = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+    static constexpr auto autoReplayKey = "replay/automatic";
+    auto *launch = menu.addAction("Launch at Windows sign-in");
+    launch->setCheckable(true);
+    {
+        const QSettings startup(runKey, QSettings::NativeFormat);
+        launch->setChecked(startup.contains("Klippit"));
+    }
+    connect(launch, &QAction::triggered, this, [this, launch](bool enabled) {
+        QSettings startup(runKey, QSettings::NativeFormat);
+        if (enabled) {
+            const auto executable = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+            startup.setValue("Klippit", QString("\"%1\" --sign-in").arg(executable));
+        } else {
+            startup.remove("Klippit");
+        }
+        startup.sync();
+        if (startup.status() != QSettings::NoError) {
+            launch->setChecked(!enabled);
+            tray.showMessage("Klippit", "Could not update Windows sign-in settings.", QSystemTrayIcon::Warning);
+        }
+    });
+
+    auto *automatic = menu.addAction("Start replay automatically");
+    automatic->setCheckable(true);
+    const QSettings settings("Klippit", "Klippit");
+    automatic->setChecked(settings.value(autoReplayKey, false).toBool());
+    connect(automatic, &QAction::triggered, this, [this, automatic](bool enabled) {
+        QSettings settings("Klippit", "Klippit");
+        settings.setValue(autoReplayKey, enabled);
+        settings.sync();
+        if (settings.status() != QSettings::NoError) {
+            automatic->setChecked(!enabled);
+            tray.showMessage("Klippit", "Could not save the automatic replay setting.", QSystemTrayIcon::Warning);
+        }
+    });
+    if (automatic->isChecked()) QTimer::singleShot(0, this, &ReplayTray::start);
 }
 
 void ReplayTray::start()

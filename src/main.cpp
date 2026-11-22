@@ -3,6 +3,7 @@
 #ifdef Q_OS_WIN
 #include "ReplayTray.h"
 #include <QAbstractNativeEventFilter>
+#include <QDir>
 #include <QScopeGuard>
 #include <windows.h>
 
@@ -32,6 +33,10 @@ private:
 int main(int argc, char **argv)
 {
 #ifdef Q_OS_WIN
+    bool signIn = false;
+    for (int i = 1; i < argc; ++i)
+        signIn |= QByteArrayView(argv[i]) == "--sign-in";
+
     const UINT reopenMessage = RegisterWindowMessageW(L"Klippit.ReopenEditor");
     // Creating the named mutex is atomic, including when two launches race.
     const HANDLE instance = CreateMutexW(nullptr, FALSE, L"Local\\Klippit.Editor");
@@ -42,18 +47,27 @@ int main(int argc, char **argv)
         return 1;
     }
     if (instanceStatus == ERROR_ALREADY_EXISTS) {
+        if (signIn) return 0;
         return PostMessageW(HWND_BROADCAST, reopenMessage, 0, 0) ? 0 : 1;
     }
 #endif
 
     QApplication app(argc, argv);
+#ifdef Q_OS_WIN
+    // A deployed copy can keep its FFmpeg tools beside the executables.
+    const auto appFolder = QDir::toNativeSeparators(QCoreApplication::applicationDirPath());
+    const QString path = appFolder + ';' + qEnvironmentVariable("PATH");
+    SetEnvironmentVariableW(L"PATH", reinterpret_cast<LPCWSTR>(path.utf16()));
+#endif
     Editor editor;
 #ifdef Q_OS_WIN
     ReopenEditor reopen(editor, reopenMessage);
     app.installNativeEventFilter(&reopen);
     const auto removeFilter = qScopeGuard([&] { app.removeNativeEventFilter(&reopen); });
     ReplayTray replayTray(editor);
-#endif
+    if (!signIn || !replayTray.isAvailable()) editor.show();
+#else
     editor.show();
+#endif
     return app.exec();
 }

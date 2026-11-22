@@ -9,8 +9,10 @@ class Editor;
 class ReplayTray : public QObject {
 public:
     explicit ReplayTray(Editor &editor);
+    bool isAvailable() const { return tray.isVisible(); }
 
 private:
+    void configureStartup();
     void start();
     void stop();
     void showEditor();
