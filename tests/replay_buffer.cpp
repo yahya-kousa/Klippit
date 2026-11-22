@@ -9,25 +9,31 @@
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
-    if (argc != 4) return 1;
+    if (argc != 8) return 1;
     QFile input(app.arguments()[1]);
     if (!input.open(QIODevice::ReadOnly)) return 1;
-    Replay replay(app.arguments()[2], app.arguments()[3].toLongLong());
+    Replay replay(app.arguments()[2], app.arguments()[3].toLongLong(),
+                  app.arguments()[4].toInt());
+    const int first = app.arguments()[5].toInt();
+    const int second = app.arguments()[6].toInt();
+    const bool overlapWrites = app.arguments()[7] == "overlap";
     int fragments = 0;
     while (!input.atEnd()) {
         const auto header = input.read(8);
         if (header.size() != 8) return 1;
         const auto size = qFromBigEndian<quint32>(header.constData());
         if (size < 8 || !replay.ingest(header.left(3)) || !replay.ingest(header.mid(3))) return 1;
-        if (header.mid(4) == "mdat" && (++fragments == 18 || fragments == 22)) {
-            if (fragments == 22) {
-                while (replay.saving()) { app.processEvents(); QThread::msleep(1); }
+        if (header.mid(4) == "mdat" && (++fragments == first || fragments == second)) {
+            if (fragments == second) {
+                if (!replay.saving()) return 1;
+                if (!overlapWrites) {
+                    while (replay.saving()) { app.processEvents(); QThread::msleep(1); }
+                }
             }
             replay.request();
         }
         if (!replay.ingest(input.read(size - 8))) return 1;
-        app.processEvents();
     }
     while (replay.saving()) { app.processEvents(); QThread::msleep(1); }
-    return fragments >= 22 ? 0 : 1;
+    return fragments >= second ? 0 : 1;
 }

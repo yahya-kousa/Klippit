@@ -12,6 +12,7 @@
 #include <QSysInfo>
 #include <QTemporaryDir>
 #include <QTextStream>
+#include <algorithm>
 
 // Let FFmpeg negotiate D3D11 capture surfaces with the actual encoder and driver.
 // A listed encoder can still fail to initialize on the selected display adapter.
@@ -55,6 +56,8 @@ int main(int argc, char **argv)
     cli.addHelpOption();
     cli.addPositionalArgument("output.mkv", "New output file");
     cli.addOptions({
+        {"history", "Replay history in seconds (1-300)", "seconds", "15"},
+        {"buffer-mib", "Encoded replay history memory limit (1-2048 MiB)", "MiB"},
         {"replay", "Keep recent encoded video in RAM (Ctrl+Shift+F9 saves, Ctrl+Shift+End or console Q stops)."},
         {"desktop-audio", "Capture the default Windows playback device."},
         {"mic", "Include this DirectShow microphone along with desktop audio.", "device"},
@@ -66,6 +69,14 @@ int main(int argc, char **argv)
         {"bitrate", "Target video bitrate in Mbit/s (1-500)", "mbps", "30"},
     });
     cli.process(app);
+    const int history = cli.value("history").toInt();
+    const int configuredMiB = cli.value("buffer-mib").toInt();
+    const bool replay = cli.isSet("replay");
+    if ((!replay && (cli.isSet("history") || cli.isSet("buffer-mib"))) ||
+        history < 1 || history > 300 ||
+        (cli.isSet("buffer-mib") && (configuredMiB < 1 || configuredMiB > 2048)))
+        cli.showHelp(2);
+
     const auto paths = cli.positionalArguments();
     const int fps = cli.value("fps").toInt();
     const int bitrate = cli.value("bitrate").toInt();
@@ -142,7 +153,13 @@ int main(int argc, char **argv)
         args << "-an";
     }
     args = inputs + args;
-    if (cli.isSet("replay")) return recordReplay(args, output.absoluteFilePath(), desktop);
+    if (replay) {
+        constexpr qint64 mib = 1024 * 1024;
+        // Allow 25% headroom for audio, bitrate variation and GOP alignment.
+        const qint64 estimate = (qint64(bitrate) * (history + 1) * 156250 + mib - 1) / mib;
+        const qint64 limitMiB = cli.isSet("buffer-mib") ? configuredMiB : std::clamp<qint64>(estimate, 96, 2048);
+        return recordReplay(args, output.absoluteFilePath(), desktop, history, limitMiB * mib);
+    }
     QTemporaryDir staging(output.dir().filePath(".klippit-record-XXXXXX"));
     if (!staging.isValid()) {
         QTextStream(stderr) << "Cannot stage recording in " << output.absolutePath()

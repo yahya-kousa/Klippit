@@ -2,6 +2,7 @@
 
 #include <QElapsedTimer>
 #include <QProcess>
+#include <QList>
 #include <deque>
 #include <optional>
 
@@ -9,25 +10,41 @@ inline constexpr qint64 replayTimescale = 90000;
 
 class Replay {
 public:
-    explicit Replay(QString path, qint64 maxHistoryBytes = 96 * 1024 * 1024);
+    explicit Replay(QString path, qint64 maxHistoryBytes = 96 * 1024 * 1024,
+                    int historySeconds = 15);
     bool ingest(const QByteArray &chunk);
     void request();
-    bool waitingForFragment() const { return requested; }
-    bool saving() const { return writer.state() != QProcess::NotRunning; }
+    bool waitingForFragment() const { return requestTimer.isValid(); }
+    bool saving() const { return !saves.empty(); }
 
 private:
     struct Fragment {
         qint64 start;
         QByteArray data;
     };
-    void save();
+    struct Save {
+        QList<QByteArray> fragments;
+        QElapsedTimer timer;
+        qint64 bytes = 0;
+        qint64 firstFragment = 0;
+        qint64 lastFragment = 0;
+    };
+    void queueSave();
+    void writeNext();
+    void finishSave(bool success, const QString &path);
+    void report(const char *event, const QString &detail);
+
     QProcess writer;
     QString firstPath;
     QByteArray header, pending, metadata;
     std::optional<qint64> start;
     std::deque<Fragment> ring;
     const qint64 byteLimit;
+    const qint64 historyTicks;
+    std::deque<Save> saves;
+    std::optional<qint64> previousBoundary, publishedBoundary;
+    qint64 saveBytes = 0;
+    quint64 filenames = 0;
     qint64 used = 0;
-    QElapsedTimer timer;
-    bool requested = false, savedOnce = false;
+    QElapsedTimer requestTimer;
 };

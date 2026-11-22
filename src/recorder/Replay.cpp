@@ -14,9 +14,9 @@
 #include <cstdio>
 #endif
 
-int recordReplay(QStringList args, const QString &firstPath, bool desktop)
+int recordReplay(QStringList args, const QString &firstPath, bool desktop, int historySeconds, qint64 bufferBytes)
 {
-    Replay replay(firstPath);
+    Replay replay(firstPath, bufferBytes, historySeconds);
     QProcess capture;
     bool valid = true;
     QObject::connect(&capture, &QProcess::readyReadStandardOutput, [&]{
