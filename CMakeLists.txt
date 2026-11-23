@@ -50,6 +50,7 @@ if(WIN32)
     add_executable(klippit-record src/recorder/main.cpp src/recorder/Loopback.cpp src/recorder/Replay.cpp src/recorder/ReplayBuffer.cpp src/ClipQueue.cpp)
     target_include_directories(klippit-record PRIVATE src)
     target_link_libraries(klippit-record PRIVATE Qt6::Core user32 ole32)
+    add_dependencies(klippit klippit-record)
 
     # Source builds can run without the installer and updater SDK.
     set(KLIPPIT_VELOPACK_SDK "" CACHE PATH "Extracted Velopack SDK for Windows x64 packaging")

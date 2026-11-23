@@ -15,6 +15,9 @@
 #ifdef Q_OS_WIN
 #include <QAbstractNativeEventFilter>
 #include <windows.h>
+#include "../ReplayAppFolders.h"
+#include <QSettings>
+#include <QDir>
 #include <conio.h>
 #include <io.h>
 #include <cstdio>
@@ -23,6 +26,21 @@ namespace {
 constexpr int saveHotkeyId = 1;
 constexpr int stopHotkeyId = 2;
 constexpr int alternateSaveHotkeyId = 3;
+
+QString foregroundFolder()
+{
+    const HWND window = GetForegroundWindow();
+    DWORD pid = 0;
+    if (!window || !GetWindowThreadProcessId(window, &pid)) return "Desktop";
+    const HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!process) return "Desktop";
+    const auto closeProcess = qScopeGuard([process] { CloseHandle(process); });
+    wchar_t path[32768];
+    DWORD length = 32768;
+    if (!QueryFullProcessImageNameW(process, 0, path, &length)) return "Desktop";
+    const QString executable = QDir::fromNativeSeparators(QString::fromWCharArray(path, length));
+    return replayAppFolder(executable, QSettings("Klippit", "Klippit").value(desktopAppsKey).toStringList());
+}
 
 bool registerSaveHotkey(int id, const ReplayHotkey &hotkey)
 {
@@ -179,18 +197,21 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
 
         bool &stopping;
         int &activeHotkeyId;
-        Keys(Replay &r, bool &s, int &id) : replay(r), stopping(s), activeHotkeyId(id) {}
+        bool groupByApp;
+        Keys(Replay &r, bool &s, int &id, bool group)
+            : replay(r), stopping(s), activeHotkeyId(id), groupByApp(group) {}
         bool nativeEventFilter(const QByteArray &, void *message, qintptr *) override {
             auto *msg = static_cast<MSG *>(message);
             if (msg->message != WM_HOTKEY) return false;
-            if (msg->wParam == static_cast<WPARAM>(activeHotkeyId) && !stopping) replay.request();
+            if (msg->wParam == static_cast<WPARAM>(activeHotkeyId) && !stopping)
+                replay.request(groupByApp ? foregroundFolder() : QString());
             if (msg->wParam == stopHotkeyId && !stopping) {
                 stopping = true;
                 qInfo("Stop hotkey received.");
             }
             return true;
         }
-    } keys(replay, stopping, activeHotkeyId);
+    } keys(replay, stopping, activeHotkeyId, managed);
     QCoreApplication::instance()->installNativeEventFilter(&keys);
 #endif
     const int result = QCoreApplication::exec();

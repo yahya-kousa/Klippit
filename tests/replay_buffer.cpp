@@ -1,4 +1,5 @@
 #include "ReplayBuffer.h"
+#include "ReplayAppFolders.h"
 #include <QCoreApplication>
 #include <QFile>
 #include <QThread>
@@ -10,6 +11,12 @@
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
+    const QStringList grouped{"brave", "WindowsTerminal"};
+    if (replayAppFolder("C:/Apps/Brave.exe", grouped) != "Desktop" ||
+        replayAppFolder("C:/Apps/Brave.exe", {}) != "Brave" ||
+        replayAppFolder("notepad.exe", grouped) != "notepad" ||
+        replayAppFolder("zelda-recomp.exe", grouped) != "zelda-recomp" ||
+        replayAppFolder("explorer.exe", {}) != "Desktop") return 1;
     if (argc != 8) return 1;
     QFile input(app.arguments()[1]);
     if (!input.open(QIODevice::ReadOnly)) return 1;
@@ -33,7 +40,10 @@ int main(int argc, char **argv)
                     while (replay.saving()) { app.processEvents(); QThread::msleep(1); }
                 }
             }
-            replay.request();
+            if (app.arguments()[4] == "60")
+                replay.request(fragments == first ? "Overwatch" : "Desktop");
+            else
+                replay.request();
         }
         if (!replay.ingest(input.read(size - 8))) return 1;
     }

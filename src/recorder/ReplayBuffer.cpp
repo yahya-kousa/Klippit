@@ -83,12 +83,13 @@ void Replay::report(const char *event, const QString &detail)
     QTextStream(stdout) << QJsonDocument(message).toJson(QJsonDocument::Compact) << Qt::endl;
 }
 
-void Replay::request()
+void Replay::request(const QString &folder)
 {
     if (waitingForFragment()) {
         report("clip_coalesced", QStringLiteral("Wait for the next video fragment before saving again."));
         return;
     }
+    requestedFolder = folder;
     requestTimer.start();
 }
 
@@ -96,6 +97,7 @@ void Replay::queueSave()
 {
     Save snapshot;
     snapshot.readyTimer.start();
+    snapshot.folder = requestedFolder;
     snapshot.timer = requestTimer;
     requestTimer.invalidate();
     auto first = ring.begin();
@@ -159,13 +161,19 @@ void Replay::finishSave(bool success, const QString &path)
 void Replay::writeNext()
 {
     const QFileInfo first(firstPath);
-    QString path = firstPath;
+    QDir destination = first.dir();
+    const auto &folder = saves.front().folder;
+    if (!folder.isEmpty() && (!destination.mkpath(folder) || !destination.cd(folder))) {
+        finishSave(false, first.dir().filePath(folder));
+        return;
+    }
+    QString path = destination.filePath(first.fileName());
     if (filenames++ || QFileInfo::exists(path)) {
-        path = first.dir().filePath(first.completeBaseName() + "-" +
+        path = destination.filePath(first.completeBaseName() + "-" +
             QDateTime::currentDateTimeUtc().toString("yyyyMMdd-hhmmss-zzz") + "-" +
             QUuid::createUuid().toString(QUuid::Id128).left(8) + ".mkv");
     }
-    QTemporaryDir stage(first.dir().filePath(".klippit-save-XXXXXX"));
+    QTemporaryDir stage(destination.filePath(".klippit-save-XXXXXX"));
     if (!stage.isValid()) {
         finishSave(false, path);
         return;
