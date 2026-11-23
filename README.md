@@ -21,12 +21,15 @@ Klippit is open source under the [GNU General Public License version 3](LICENSE)
 | Open an MKV, MP4, or MOV recording | Open button or Ctrl+O (⌘O on macOS) |
 | Play or pause | K |
 | Seek | Drag the playhead |
+| Step one frame backward or forward | `,` / `.` |
 | Mark the requested start | I |
 | Mark the end | O |
 | Preview the selection from its lossless start | Space while paused |
 | Export to MP4 or MKV | Enter |
 
 The green flag marks your requested start and the orange flag marks your end. The playhead shows your current position. Preview plays the default audio track. Export copies the first video track and all audio tracks. MP4 is selected by default for sharing. Choose Matroska (MKV) in the export dialog, or use **Save as MKV** if FFmpeg reports that MP4 cannot carry a track.
+
+Frame stepping pauses playback. The first step indexes the video's frame timestamps, so it can take a moment on long recordings. Press **I** or **O** to mark the selected frame's timestamp.
 
 ## How lossless trimming works
 

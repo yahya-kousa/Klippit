@@ -12,10 +12,16 @@ int main(int argc, char **argv)
     std::vector<qint64> keys;
     for (const auto &key : args.mid(5)) keys.push_back(key.toLongLong());
 
-    const auto range = losslessRange(keys, 5800, 10500);
+    const auto range = losslessRange(keys, 5800000, 10500000);
     const qint64 expectedStart = args[4].toLongLong();
     if (!range || range->startUs != expectedStart || range->durationUs != 10500000 - expectedStart) {
         qCritical() << "Unexpected effective trim range";
+        return 1;
+    }
+    // Marks selected by frame stepping may fall between whole milliseconds.
+    const auto stepped = losslessRange({0, 16667}, 16667, 33333);
+    if (!stepped || stepped->startUs != 16667 || stepped->durationUs != 16666) {
+        qCritical() << "Frame timestamp lost precision";
         return 1;
     }
     ClipExporter exporter;
