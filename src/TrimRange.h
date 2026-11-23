@@ -11,10 +11,10 @@ struct TrimRange {
 };
 
 inline std::optional<TrimRange> losslessRange(const std::vector<qint64> &sortedKeysUs,
-                                             qint64 requestedStartMs, qint64 endMs)
+                                             qint64 requestedStartUs, qint64 endUs)
 {
-    auto after = std::upper_bound(sortedKeysUs.begin(), sortedKeysUs.end(), requestedStartMs * 1000);
+    auto after = std::upper_bound(sortedKeysUs.begin(), sortedKeysUs.end(), requestedStartUs);
     if (after == sortedKeysUs.begin()) return std::nullopt;
     const auto startUs = *std::prev(after);
-    return TrimRange{startUs, endMs * 1000 - startUs};
+    return TrimRange{startUs, endUs - startUs};
 }
