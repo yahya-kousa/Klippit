@@ -33,7 +33,7 @@ Frame stepping pauses playback. Klippit reads frame timestamps near the playhead
 
 ## Choose where clips save
 
-Open **Save folders…** from the editor or Windows tray. Use **Browse…** to choose a folder for replay captures or trimmed exports. The replay folder takes effect the next time you start replay. The trim folder sets the starting location of the export dialog, where you can still pick a different destination for each export.
+In the Klippit window, open **Settings → Save folders…**. You can also open **Save folders…** from the Windows tray. Use **Browse…** to choose a folder for replay captures or trimmed exports. The replay folder takes effect the next time you start replay. The trim folder sets the starting location of the export dialog, where you can still pick a different destination for each export.
 
 **Use default** restores **Videos → Klippit** for replays and the source clip's folder for trims. Saved clips stay in their original locations.
 
@@ -80,7 +80,7 @@ The editor and export workflow have been tested on CachyOS with a 1440p Overwatc
 
 Build both Windows targets into the same folder, then open `klippit.exe`. In the Windows system tray, right-click Klippit and select **Start Replay**. The menu shows when recording starts and when the buffer has footage. Press the save hotkey (**Ctrl+Shift+F9** by default), and open **Clips to Trim** from the tray when you want to edit. The tray defaults to desktop audio and 15 seconds of history. It saves MKVs in **Videos → Klippit** by default. Closing the editor leaves the tray and recorder running. Launching Klippit again opens the existing editor. **Stop Replay** finishes accepted saves, and **Quit Klippit** also closes the tray. Use **Quit Klippit** before rebuilding on Windows.
 
-Open **Replay Settings** from the tray to set the history length, save hotkey, and audio source. **Advanced** exposes target FPS and video bitrate. The save hotkey updates while replay is running. Other changes take effect the next time replay starts, including automatic startup. If Windows rejects a live hotkey change, Klippit keeps the previous shortcut. For a microphone option, choose an input from the dropdown. Click **Refresh** after connecting a device. A saved microphone stays selected if it is temporarily unavailable. If Windows rejects your shortcut, open **Recorder Error** from the tray for details.
+Open **Settings → Replay Settings…** in the Klippit window or **Replay Settings…** from the tray to set the history length, save hotkey, and audio source. **Advanced** exposes target FPS and video bitrate. The save hotkey updates while replay is running. Other changes take effect the next time replay starts, including automatic startup. If Windows rejects a live hotkey change, Klippit keeps the previous shortcut. For a microphone option, choose an input from the dropdown. Click **Refresh** after connecting a device. A saved microphone stays selected if it is temporarily unavailable. If Windows rejects your shortcut, open **Recorder Error** from the tray for details.
 
 To launch minimized to the tray when you sign in, enable **Launch at Windows sign-in**. Enable **Start replay automatically** as well to fill the buffer whenever Klippit starts. Both options are off by default. Windows starts the app from the path registered when you enable the option. If you move the build, toggle **Launch at Windows sign-in** off and back on from the new copy.
 
