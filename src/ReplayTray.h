@@ -17,10 +17,15 @@ public:
 private:
 #ifdef KLIPPIT_PACKAGED
     void configureUpdates();
+    void checkForUpdates(bool download);
+    void refreshUpdateAction();
     void completeRestart(bool recorderStoppedCleanly);
     QProcess updateWorker;
+    QTimer updateCheckTimer;
     QAction *updateAction = nullptr;
+    QString availableUpdateVersion;
     QString updateVersion;
+    bool backgroundUpdateCheck = false;
     bool restarting = false;
 #endif
     bool nativeEventFilter(const QByteArray &, void *message, qintptr *) override;

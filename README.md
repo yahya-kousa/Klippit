@@ -6,7 +6,7 @@ Klippit is a keyboard-driven desktop app for trimming gameplay recordings withou
 
 Download `Klippit-win-Setup.exe` from the [latest GitHub release](https://github.com/yahya-kousa/Klippit/releases/latest), run Setup, and open **Klippit** from Start.
 
-To update an installed copy, choose **Check for updates…** from the tray. When the download finishes, choose **Restart and update**. Save any replay you want to keep and finish editing first. Restarting clears unsaved replay history and trim marks.
+Klippit checks for updates shortly after launch and periodically while it runs in the tray. When it finds a new version, it shows a notification and adds **Download update** to the tray menu. You can also choose **Check for updates…** manually. When the download finishes, choose **Restart and update**. Save any replay you want to keep and finish editing first. Restarting clears unsaved replay history and trim marks.
 
 ## Contribute
 

@@ -18,7 +18,7 @@ Velopack::UpdateManager makeUpdateManager()
 }
 }
 
-int prepareAppUpdate()
+int checkAppUpdate(bool download)
 {
     try {
         auto manager = makeUpdateManager();
@@ -26,6 +26,10 @@ int prepareAppUpdate()
         if (!pending) {
             const auto update = manager.CheckForUpdates();
             if (!update) return 0;
+            if (!download) {
+                std::puts(update->TargetFullRelease.Version.c_str());
+                return 0;
+            }
             manager.DownloadUpdates(*update);
             pending = manager.UpdatePendingRestart();
             if (!pending) throw std::runtime_error("Downloaded update is unavailable for restart.");
