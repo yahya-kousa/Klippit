@@ -112,7 +112,10 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
     });
     const auto readDiagnostics = [this] {
         diagnostics += QString::fromUtf8(recorder.readAllStandardError());
-        captureAccessLost |= diagnostics.contains("887a0026", Qt::CaseInsensitive);
+        // ddagrab reports the HRESULT when acquiring a frame, but omits it
+        // when releasing one. Either call can fail when the desktop switches.
+        displayCaptureInterrupted |= diagnostics.contains("887a0026", Qt::CaseInsensitive) ||
+                                     diagnostics.contains("DDA ReleaseFrame failed", Qt::CaseInsensitive);
         diagnostics = diagnostics.right(4000);
     };
     connect(&recorder, &QProcess::readyReadStandardError, this, readDiagnostics);
@@ -130,7 +133,7 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
         finishHotkeyUpdate("Replay ended before confirming the new shortcut.");
         if (code != 0 || exit != QProcess::NormalExit) {
             if (exit == QProcess::NormalExit && !quitting && stopAction->isEnabled() &&
-                (captureAccessLost || sessionLocked || recovering)) {
+                (displayCaptureInterrupted || sessionLocked || recovering)) {
                 scheduleRecovery();
                 return;
             }
@@ -349,7 +352,7 @@ void ReplayTray::start()
 {
     if (recorder.state() != QProcess::NotRunning || quitting) return;
     bufferReady = false;
-    captureAccessLost = false;
+    displayCaptureInterrupted = false;
     diagnostics.clear();
     details->setVisible(false);
     const auto executable = QDir(QCoreApplication::applicationDirPath()).filePath("klippit-record.exe");

@@ -49,7 +49,7 @@ private:
     int recoveryAttempts = 0;
     bool sessionLocked = false;
     bool recovering = false;
-    bool captureAccessLost = false;
+    bool displayCaptureInterrupted = false;
     QString pendingHotkey;
     QString diagnostics;
     bool bufferReady = false;
