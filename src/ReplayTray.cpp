@@ -34,6 +34,7 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
     startAction = menu.addAction("Start Replay", this, &ReplayTray::start);
     stopAction = menu.addAction("Stop Replay", this, &ReplayTray::stop);
     stopAction->setEnabled(false);
+    editor.setReplayActions(status, startAction, stopAction);
     menu.addSeparator();
     menu.addAction("Open Klippit", this, &ReplayTray::showEditor);
     menu.addAction("Clips to Trim", this, [this] {

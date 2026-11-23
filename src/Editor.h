@@ -13,6 +13,8 @@ class ClipMarkers;
 class QLabel;
 class QMenu;
 class QPushButton;
+class QStackedWidget;
+class QToolButton;
 
 class Editor : public QWidget {
     QMediaPlayer player;
@@ -34,6 +36,14 @@ class Editor : public QWidget {
     QPushButton *markDoneButton;
     QPushButton *trashButton;
     QMenu *settingsMenu;
+    QStackedWidget *pages;
+    QWidget *homePage;
+    QWidget *editPage;
+    QLabel *replayStatus = nullptr;
+    QToolButton *startReplay = nullptr;
+    QToolButton *stopReplay = nullptr;
+    QPushButton *homeQueue = nullptr;
+    QPushButton *resumeEditing = nullptr;
     std::optional<ClipQueue::Entry> queueEntry;
     bool clipCompleted = false;
     QString source, destination;
@@ -48,6 +58,8 @@ class Editor : public QWidget {
     bool seekAdjacentFrame(qint64 positionUs, int direction);
 
     void updateQueueActions();
+    void setupHome();
+    void refreshHome();
     void markDone();
     void trashClip(ClipQueue::Entry entry, bool completed, QWidget *parent);
     void open();
@@ -67,6 +79,7 @@ protected:
 public:
     Editor();
     void addSettingsAction(QAction *action);
+    void setReplayActions(QAction *state, QAction *start, QAction *stop);
     void showClipQueue();
     void showAndActivate();
 };
