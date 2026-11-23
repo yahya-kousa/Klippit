@@ -19,7 +19,7 @@ public:
     QList<Entry> entries(bool completed, bool *readError = nullptr) const;
     bool setCompleted(const Entry &entry, bool completed) const;
 
-    bool removeCompleted(const Entry &entry) const;
+    bool removeEntry(const Entry &entry, bool completed) const;
 
 private:
     static QString storageDirectory();

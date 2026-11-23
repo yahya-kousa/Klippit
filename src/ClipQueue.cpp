@@ -74,8 +74,8 @@ bool ClipQueue::setCompleted(const Entry &entry, bool completed) const
            QFile::rename(entryPath(entry.id, !completed), entryPath(entry.id, completed));
 }
 
-bool ClipQueue::removeCompleted(const Entry &entry) const
+bool ClipQueue::removeEntry(const Entry &entry, bool completed) const
 {
     return !root.isEmpty() && !QUuid::fromString(entry.id).isNull() &&
-           QFile::remove(entryPath(entry.id, true));
+           QFile::remove(entryPath(entry.id, completed));
 }

@@ -65,7 +65,7 @@ void Editor::openFile(const QString &file)
     edited = previewing = false;
     startUs = endUs = 0;
     timeline->setRange(0, 0);
-    updateQueueAction();
+    updateQueueActions();
     if (file.isEmpty()) {
         player.setSource({});
         title->setText("Open a replay");
@@ -84,7 +84,7 @@ void Editor::openFile(const QString &file)
     refresh();
 }
 
-void Editor::updateQueueAction()
+void Editor::updateQueueActions()
 {
     queueEntry.reset();
     if (!source.isEmpty()) {
@@ -100,37 +100,41 @@ void Editor::updateQueueAction()
             if (queueEntry) break;
         }
     }
-    queueAction->setVisible(queueEntry.has_value());
-    queueAction->setText(clipCompleted ? "Trash original…" : "Mark done");
+    markDoneButton->setVisible(queueEntry.has_value() && !clipCompleted);
+    trashButton->setVisible(queueEntry.has_value());
 }
 
-void Editor::finishOrTrashClip()
+void Editor::markDone()
 {
     if (!queueEntry || exporter.isBusy()) return;
-    const ClipQueue queue;
-    if (!clipCompleted) {
-        const bool changed = queue.setCompleted(*queueEntry, true);
-        updateQueueAction();
-        status->setText(changed ? "Marked done. You can keep the original or move it to the trash."
-                                : "Could not mark this clip done. Check Clips to Trim.");
-        return;
-    }
-    if (QMessageBox::question(this, "Trash original replay?",
+    const bool changed = ClipQueue().setCompleted(*queueEntry, true);
+    updateQueueActions();
+    status->setText(changed ? "Marked done. You can keep the original or move it to the trash."
+                            : "Could not mark this clip done. Check Clips to Trim.");
+}
+
+void Editor::trashClip(ClipQueue::Entry entry, bool completed, QWidget *parent)
+{
+    if (exporter.isBusy()) return;
+    if (QMessageBox::question(parent, "Trash original replay?",
             tr("Move this original replay to the trash? Exported trims will be kept.\n\n%1")
-                .arg(QDir::toNativeSeparators(source)),
+                .arg(QDir::toNativeSeparators(entry.path)),
             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes) return;
 
-    const auto entry = *queueEntry;
-    // Release the player and ffprobe file handles before asking Windows to move the source.
-    openFile({});
+    const bool isOpen = !source.isEmpty() && QFileInfo(entry.path) == QFileInfo(source);
+    if (isOpen) openFile({}); // Release player and probe handles before moving the file.
     QFile original(entry.path);
     if (!original.moveToTrash()) {
-        openFile(entry.path);
-        QMessageBox::warning(this, "Could not trash replay", original.errorString());
+        if (isOpen) openFile(entry.path);
+        QMessageBox::warning(parent, "Could not trash replay", original.errorString());
         return;
     }
-    status->setText(queue.removeCompleted(entry) ? "Original replay moved to the trash."
-        : "Original replay moved to the trash, but the completed queue entry could not be removed.");
+    if (!ClipQueue().removeEntry(entry, completed)) {
+        QMessageBox::warning(parent, "Queue update failed",
+            "Original replay moved to the trash, but the queue entry could not be removed.");
+    } else if (isOpen) {
+        status->setText("Original replay moved to the trash.");
+    }
 }
 
 void Editor::showClipQueue()
@@ -153,6 +157,7 @@ void Editor::showClipQueue()
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
     auto *openClip = buttons->addButton("Open Clip", QDialogButtonBox::AcceptRole);
     auto *changeState = buttons->addButton("Mark Done", QDialogButtonBox::ActionRole);
+    auto *trash = buttons->addButton("Trash original…", QDialogButtonBox::ActionRole);
     layout->addWidget(completed);
     layout->addWidget(list);
     layout->addWidget(message);
@@ -163,6 +168,7 @@ void Editor::showClipQueue()
     auto updateButtons = [&] {
         const int row = list->currentRow();
         openClip->setEnabled(row >= 0 && QFileInfo(entries.at(row).path).isFile());
+        trash->setEnabled(openClip->isEnabled());
         changeState->setEnabled(row >= 0);
     };
     auto refreshQueue = [&] {
@@ -214,13 +220,19 @@ void Editor::showClipQueue()
         refreshQueue();
         if (!changed) message->setText("Could not update this clip's queue status.");
     });
+    connect(trash, &QPushButton::clicked, &dialog, [&] {
+        const int row = list->currentRow();
+        if (row < 0) return;
+        trashClip(entries.at(row), completed->isChecked(), &dialog);
+        refreshQueue();
+    });
     QFileSystemWatcher watcher;
     const bool watching = watcher.addPath(queue.directory());
     connect(&watcher, &QFileSystemWatcher::directoryChanged, &dialog, refreshQueue);
     refreshQueue();
     if (!watching) message->setText("Reopen Clips to Trim to see new saves.");
     if (dialog.exec() == QDialog::Accepted) openFile(selectedPath);
-    else updateQueueAction();
+    else updateQueueActions();
 }
 
 void Editor::stepFrame(int direction)
@@ -371,7 +383,8 @@ Editor::Editor()
       title(new QLabel("Open a replay")),
       times(new QLabel),
       status(new QLabel),
-      queueAction(new QPushButton)
+      markDoneButton(new QPushButton("Mark done")),
+      trashButton(new QPushButton("Trash original…"))
 {
     setWindowTitle("Klippit");
     resize(960, 640);
@@ -379,10 +392,14 @@ Editor::Editor()
     auto *video = new QVideoWidget;
     auto *heading = new QHBoxLayout;
     heading->addWidget(title, 1);
-    heading->addWidget(queueAction);
+    heading->addWidget(markDoneButton);
+    heading->addWidget(trashButton);
     layout->addLayout(heading);
-    queueAction->hide();
-    connect(queueAction, &QPushButton::clicked, this, &Editor::finishOrTrashClip);
+    updateQueueActions();
+    connect(markDoneButton, &QPushButton::clicked, this, &Editor::markDone);
+    connect(trashButton, &QPushButton::clicked, this, [this] {
+        if (queueEntry) trashClip(*queueEntry, clipCompleted, this);
+    });
     layout->addWidget(video, 1);
     auto *track = new QVBoxLayout;
     track->setSpacing(0);
@@ -523,7 +540,8 @@ Editor::Editor()
         [this](QMediaPlayer::Error, const QString &message){ status->setText(message); });
     connect(&exporter, &ClipExporter::statusChanged, this, [this](const QString &message) {
         status->setText(message);
-        queueAction->setEnabled(!exporter.isBusy());
+        markDoneButton->setEnabled(!exporter.isBusy());
+        trashButton->setEnabled(!exporter.isBusy());
     });
     connect(&exporter, &ClipExporter::mp4Unsupported, this, [this]{
         QMessageBox box(QMessageBox::Information, "MP4 cannot carry this track",

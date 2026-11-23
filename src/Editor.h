@@ -30,7 +30,8 @@ class Editor : public QWidget {
     QLabel *title;
     QLabel *times;
     QLabel *status;
-    QPushButton *queueAction;
+    QPushButton *markDoneButton;
+    QPushButton *trashButton;
     std::optional<ClipQueue::Entry> queueEntry;
     bool clipCompleted = false;
     QString source, destination;
@@ -44,8 +45,9 @@ class Editor : public QWidget {
     void stepFrame(int direction);
     bool seekAdjacentFrame(qint64 positionUs, int direction);
 
-    void updateQueueAction();
-    void finishOrTrashClip();
+    void updateQueueActions();
+    void markDone();
+    void trashClip(ClipQueue::Entry entry, bool completed, QWidget *parent);
     void open();
     void openFile(const QString &file);
 
