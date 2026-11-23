@@ -17,8 +17,10 @@ class Editor : public QWidget {
     ClipExporter exporter;
     QProcess probe;
     QProcess frameProbe;
-    std::vector<qint64> keysUs, frameTimesUs;
+    std::vector<qint64> keysUs, videoPacketTimesUs, frameTimesUs;
     std::optional<qint64> steppedFrameUs;
+    std::optional<qint64> frameWindowCenterUs;
+    qint64 frameProbeCenterUs = 0, mediaOriginUs = 0;
     int pendingStep = 0;
 
     TimelineSlider *timeline;
@@ -35,6 +37,7 @@ class Editor : public QWidget {
     void refresh();
     void clearFrameStep();
     void stepFrame(int direction);
+    bool seekAdjacentFrame(qint64 positionUs, int direction);
 
     void open();
     void openFile(const QString &file);
