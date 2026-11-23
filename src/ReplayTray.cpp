@@ -52,6 +52,7 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
         if (quitting || QApplication::activeModalWidget()) return;
         if (const auto shortcut = editReplaySettings(this->editor)) updateHotkey(*shortcut);
     });
+    editor.addSettingsAction(settingsAction);
     menu.addAction("Save folders…", this, [this] {
         showEditor();
         if (quitting || QApplication::activeModalWidget()) return;

@@ -394,6 +394,11 @@ void Editor::showAndActivate()
     window->activateWindow();
 }
 
+void Editor::addSettingsAction(QAction *action)
+{
+    settingsMenu->addAction(action);
+}
+
 Editor::Editor()
     : timeline(new TimelineSlider),
       markers(new ClipMarkers(timeline)),
@@ -401,7 +406,8 @@ Editor::Editor()
       times(new QLabel),
       status(new QLabel),
       markDoneButton(new QPushButton("Mark done")),
-      trashButton(new QPushButton("Trash original…"))
+      trashButton(new QPushButton("Trash original…")),
+      settingsMenu(new QMenu(this))
 {
     setWindowTitle("Klippit");
     resize(960, 640);
@@ -411,6 +417,10 @@ Editor::Editor()
     heading->addWidget(title, 1);
     heading->addWidget(markDoneButton);
     heading->addWidget(trashButton);
+    auto *settingsButton = new QPushButton("Settings");
+    settingsButton->setMenu(settingsMenu);
+    heading->addWidget(settingsButton);
+    settingsMenu->addAction("Save folders…", this, [this] { editSaveFolders(*this); });
     layout->addLayout(heading);
     updateQueueActions();
     connect(markDoneButton, &QPushButton::clicked, this, &Editor::markDone);
@@ -452,10 +462,6 @@ Editor::Editor()
     action("Set out   O", Qt::Key_O, [this]{ mark(false); });
     action("Preview   Space", Qt::Key_Space, [this]{ preview(); });
     action("Export   Enter", Qt::Key_Return, [this]{ exportClip(); });
-    auto *saveFoldersButton = new QPushButton("Save folders…");
-    saveFoldersButton->setFocusPolicy(Qt::NoFocus);
-    buttons->addWidget(saveFoldersButton);
-    connect(saveFoldersButton, &QPushButton::clicked, this, [this] { editSaveFolders(*this); });
     connect(&probe, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error){
         if (error == QProcess::FailedToStart) status->setText("Could not start ffprobe. Check PATH.");
     });

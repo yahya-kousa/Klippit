@@ -11,6 +11,7 @@
 class TimelineSlider;
 class ClipMarkers;
 class QLabel;
+class QMenu;
 class QPushButton;
 
 class Editor : public QWidget {
@@ -32,6 +33,7 @@ class Editor : public QWidget {
     QLabel *status;
     QPushButton *markDoneButton;
     QPushButton *trashButton;
+    QMenu *settingsMenu;
     std::optional<ClipQueue::Entry> queueEntry;
     bool clipCompleted = false;
     QString source, destination;
@@ -64,6 +66,7 @@ protected:
 
 public:
     Editor();
+    void addSettingsAction(QAction *action);
     void showClipQueue();
     void showAndActivate();
 };
