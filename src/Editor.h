@@ -1,5 +1,6 @@
 #pragma once
 #include "ClipExporter.h"
+#include "ClipQueue.h"
 #include <QWidget>
 #include <QMediaPlayer>
 #include <QAudioOutput>
@@ -10,6 +11,7 @@
 class TimelineSlider;
 class ClipMarkers;
 class QLabel;
+class QPushButton;
 
 class Editor : public QWidget {
     QMediaPlayer player;
@@ -28,6 +30,10 @@ class Editor : public QWidget {
     QLabel *title;
     QLabel *times;
     QLabel *status;
+    QPushButton *markDoneButton;
+    QPushButton *trashButton;
+    std::optional<ClipQueue::Entry> queueEntry;
+    bool clipCompleted = false;
     QString source, destination;
     qint64 exportStartUs = 0, exportDurationUs = 0;
     qint64 startUs = 0, endUs = 0;
@@ -39,6 +45,9 @@ class Editor : public QWidget {
     void stepFrame(int direction);
     bool seekAdjacentFrame(qint64 positionUs, int direction);
 
+    void updateQueueActions();
+    void markDone();
+    void trashClip(ClipQueue::Entry entry, bool completed, QWidget *parent);
     void open();
     void openFile(const QString &file);
 

@@ -19,6 +19,8 @@ public:
     QList<Entry> entries(bool completed, bool *readError = nullptr) const;
     bool setCompleted(const Entry &entry, bool completed) const;
 
+    bool removeEntry(const Entry &entry, bool completed) const;
+
 private:
     static QString storageDirectory();
     QString entryPath(const QString &id, bool completed) const;
