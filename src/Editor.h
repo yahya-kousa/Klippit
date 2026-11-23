@@ -61,7 +61,7 @@ class Editor : public QWidget {
     void setupHome();
     void refreshHome();
     void markDone();
-    void trashClip(ClipQueue::Entry entry, bool completed, QWidget *parent);
+    void trashClips(QList<ClipQueue::Entry> clips, bool completed, QWidget *parent);
     void open();
     void openFile(const QString &file);
 
