@@ -115,28 +115,38 @@ void Editor::markDone()
                             : "Could not mark this clip done. Check Clips to Trim.");
 }
 
-void Editor::trashClip(ClipQueue::Entry entry, bool completed, QWidget *parent)
+void Editor::trashClips(QList<ClipQueue::Entry> clips, bool completed, QWidget *parent)
 {
-    if (exporter.isBusy()) return;
-    if (QMessageBox::question(parent, "Trash original replay?",
-            tr("Move this original replay to the trash? Exported trims will be kept.\n\n%1")
-                .arg(QDir::toNativeSeparators(entry.path)),
-            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes) return;
+    if (clips.isEmpty() || exporter.isBusy()) return;
+    QStringList paths;
+    for (const auto &entry : clips) paths.append(QDir::toNativeSeparators(entry.path));
+    const QString prompt = clips.size() == 1
+        ? tr("Move this original replay to the trash?\n%1").arg(paths.first())
+        : tr("Move %1 selected original replays to the trash?").arg(clips.size());
+    QMessageBox confirm(QMessageBox::Question, "Trash original replays?", prompt,
+                        QMessageBox::Yes | QMessageBox::Cancel, parent);
+    confirm.setTextFormat(Qt::PlainText);
+    confirm.setInformativeText("Exported trims will be kept.");
+    if (clips.size() > 1) confirm.setDetailedText(paths.join('\n'));
+    confirm.setDefaultButton(QMessageBox::Cancel);
+    if (confirm.exec() != QMessageBox::Yes) return;
 
-    const bool isOpen = !source.isEmpty() && QFileInfo(entry.path) == QFileInfo(source);
-    if (isOpen) openFile({}); // Release player and probe handles before moving the file.
-    QFile original(entry.path);
-    if (!original.moveToTrash()) {
-        if (isOpen) openFile(entry.path);
-        QMessageBox::warning(parent, "Could not trash replay", original.errorString());
-        return;
+    const ClipQueue queue;
+    QStringList errors;
+    for (const auto &entry : clips) {
+        const bool isOpen = !source.isEmpty() && QFileInfo(entry.path) == QFileInfo(source);
+        if (isOpen) openFile({}); // Release player and probe handles before moving the file.
+        QFile original(entry.path);
+        if (!original.moveToTrash()) {
+            if (isOpen) openFile(entry.path);
+            errors.append(entry.path + " — " + original.errorString());
+        } else if (!queue.removeEntry(entry, completed)) {
+            errors.append(entry.path + " — moved to trash, but the queue entry could not be removed.");
+        } else if (isOpen) {
+            status->setText("Original replay moved to the trash.");
+        }
     }
-    if (!ClipQueue().removeEntry(entry, completed)) {
-        QMessageBox::warning(parent, "Queue update failed",
-            "Original replay moved to the trash, but the queue entry could not be removed.");
-    } else if (isOpen) {
-        status->setText("Original replay moved to the trash.");
-    }
+    if (!errors.isEmpty()) QMessageBox::warning(parent, "Some clips need attention", errors.join('\n'));
 }
 
 void Editor::showClipQueue()
@@ -154,6 +164,7 @@ void Editor::showClipQueue()
     auto *layout = new QVBoxLayout(&dialog);
     auto *completed = new QCheckBox("Show completed");
     auto *list = new QListWidget;
+    list->setSelectionMode(QAbstractItemView::ExtendedSelection);
     auto *message = new QLabel;
     message->setWordWrap(true);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
@@ -169,21 +180,29 @@ void Editor::showClipQueue()
 
     QList<ClipQueue::Entry> entries;
     QString selectedPath;
-    auto updateButtons = [&] {
-        const int row = list->currentRow();
-        openClip->setEnabled(row >= 0 && QFileInfo(entries.at(row).path).isFile());
-        trash->setEnabled(openClip->isEnabled());
-        remove->setEnabled(row >= 0 && (completed->isChecked() || !openClip->isEnabled()));
-        changeState->setEnabled(row >= 0);
+    auto selectedEntries = [&] {
+        QList<ClipQueue::Entry> selected;
+        for (auto *item : list->selectedItems()) selected.append(entries.at(list->row(item)));
+        return selected;
     };
+    auto updateButtons = [&] {
+        const auto selected = selectedEntries();
+        const auto available = std::count_if(selected.begin(), selected.end(),
+            [](const auto &entry) { return QFileInfo(entry.path).isFile(); });
+        openClip->setEnabled(selected.size() == 1 && available == 1);
+        trash->setEnabled(!selected.isEmpty() && available == selected.size());
+        trash->setText(selected.size() > 1 ? tr("Trash %1 originals…").arg(selected.size()) : tr("Trash original…"));
+        remove->setEnabled(!selected.isEmpty() && (completed->isChecked() || available == 0));
+        changeState->setEnabled(selected.size() == 1);
+    };
+    bool selectFirst = true;
     auto refreshQueue = [&] {
-        const int row = list->currentRow();
-        const QString selectedId = row >= 0 ? entries.at(row).id : QString();
+        QSet<QString> selectedIds;
+        for (const auto &entry : selectedEntries()) selectedIds.insert(entry.id);
         const QSignalBlocker blocked(list);
         list->clear();
         bool readError = false;
         entries = queue.entries(completed->isChecked(), &readError);
-        int selection = 0;
         for (int i = 0; i < entries.size(); ++i) {
             const auto &entry = entries.at(i);
             QString label = QFileInfo(entry.path).fileName() + "   ·   " +
@@ -191,9 +210,10 @@ void Editor::showClipQueue()
             if (!QFileInfo(entry.path).isFile()) label += "   ·   File missing";
             auto *item = new QListWidgetItem(label, list);
             item->setToolTip(entry.path);
-            if (entry.id == selectedId) selection = i;
+            if (selectedIds.contains(entry.id)) item->setSelected(true);
         }
-        list->setCurrentRow(entries.isEmpty() ? -1 : selection);
+        if (selectFirst && !entries.isEmpty()) list->setCurrentRow(0);
+        selectFirst = false;
         changeState->setText(completed->isChecked() ? "Move Back to Queue" : "Mark Done");
         if (readError) message->setText("Some queue entries could not be read.");
         else if (entries.isEmpty())
@@ -202,8 +222,9 @@ void Editor::showClipQueue()
         updateButtons();
     };
     auto openSelected = [&] {
-        if (list->currentRow() < 0) return;
-        const auto &path = entries.at(list->currentRow()).path;
+        const auto selected = selectedEntries();
+        if (selected.size() != 1) return;
+        const auto path = selected.first().path;
         if (!QFileInfo(path).isFile()) {
             refreshQueue();
             message->setText("This clip file is missing.");
@@ -213,36 +234,31 @@ void Editor::showClipQueue()
         dialog.accept();
     };
 
-    connect(completed, &QCheckBox::toggled, &dialog, refreshQueue);
-    connect(list, &QListWidget::currentRowChanged, &dialog, updateButtons);
+    connect(completed, &QCheckBox::toggled, &dialog, [&] { selectFirst = true; refreshQueue(); });
+    connect(list, &QListWidget::itemSelectionChanged, &dialog, updateButtons);
     connect(list, &QListWidget::itemDoubleClicked, &dialog, openSelected);
     connect(openClip, &QPushButton::clicked, &dialog, openSelected);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     connect(changeState, &QPushButton::clicked, &dialog, [&] {
-        const int row = list->currentRow();
-        if (row < 0) return;
-        const bool changed = queue.setCompleted(entries.at(row), !completed->isChecked());
+        const auto selected = selectedEntries();
+        if (selected.size() != 1) return;
+        const bool changed = queue.setCompleted(selected.first(), !completed->isChecked());
         refreshQueue();
         if (!changed) message->setText("Could not update this clip's queue status.");
     });
     connect(remove, &QPushButton::clicked, &dialog, [&] {
-        const int row = list->currentRow();
-        if (row < 0) return;
-        const auto &entry = entries.at(row);
         const bool done = completed->isChecked();
-        if (!done && QFileInfo(entry.path).isFile()) {
-            refreshQueue();
-            message->setText("This replay is available again.");
-            return;
+        QStringList failed;
+        for (const auto &entry : selectedEntries()) {
+            if ((!done && QFileInfo(entry.path).isFile()) || !queue.removeEntry(entry, done))
+                failed.append(entry.path);
         }
-        const bool removed = queue.removeEntry(entry, done);
         refreshQueue();
-        if (!removed) message->setText("Could not remove this queue entry.");
+        if (!failed.isEmpty())
+            QMessageBox::warning(&dialog, "Queue entries kept", failed.join('\n'));
     });
     connect(trash, &QPushButton::clicked, &dialog, [&] {
-        const int row = list->currentRow();
-        if (row < 0) return;
-        trashClip(entries.at(row), completed->isChecked(), &dialog);
+        trashClips(selectedEntries(), completed->isChecked(), &dialog);
         refreshQueue();
     });
     QFileSystemWatcher watcher;
@@ -521,7 +537,7 @@ Editor::Editor()
     updateQueueActions();
     connect(markDoneButton, &QPushButton::clicked, this, &Editor::markDone);
     connect(trashButton, &QPushButton::clicked, this, [this] {
-        if (queueEntry) trashClip(*queueEntry, clipCompleted, this);
+        if (queueEntry) trashClips({*queueEntry}, clipCompleted, this);
     });
     layout->addWidget(video, 1);
     auto *track = new QVBoxLayout;
