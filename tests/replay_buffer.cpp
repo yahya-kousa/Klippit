@@ -33,7 +33,10 @@ int main(int argc, char **argv)
                     while (replay.saving()) { app.processEvents(); QThread::msleep(1); }
                 }
             }
-            replay.request();
+            if (app.arguments()[4] == "60")
+                replay.request(fragments == first ? "Overwatch" : "Desktop");
+            else
+                replay.request();
         }
         if (!replay.ingest(input.read(size - 8))) return 1;
     }

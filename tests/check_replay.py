@@ -32,7 +32,11 @@ with tempfile.TemporaryDirectory() as tmp:
             assert event["fragment_bytes"] > 0 and event["peak_writer_queue_bytes"] >= 0
             assert event["enqueue_ns"] >= 0 and event["snapshot_to_publish_ms"] >= 0
         assert events[0]["last_fragment_ms"] < events[1]["first_fragment_ms"]
+        if history == 60:
+            first = directory / "Overwatch" / first.name
+        assert Path(events[0]["path"]) == first
         second = Path(events[1]["path"])
+        assert second.parent == (directory / "Desktop" if history == 60 else directory)
         for saved, end in zip((first, second), ends):
             data = frames(saved)
             expected = (history + 1 if saved == first else ends[1] - ends[0]) * 30
