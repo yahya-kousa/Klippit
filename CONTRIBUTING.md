@@ -20,4 +20,6 @@ Logs and small sample clips are optional. Issues are public, so remove personal 
 
 If you change performance-sensitive behavior, include the workload, hardware, settings, before-and-after measurements, and how to reproduce them when available. The [benchmark guide](benchmarks/README.md) has existing procedures.
 
+Maintainers can follow the [Windows release guide](docs/windows-releases.md) to build and test installers and ship updates.
+
 Klippit's source is licensed under the [GNU General Public License version 3](LICENSE).

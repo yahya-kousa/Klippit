@@ -2,6 +2,12 @@
 
 Klippit is a keyboard-driven desktop app for trimming gameplay recordings without re-encoding. Open a replay, mark a highlight, and save it as a new MP4 or MKV. The original recording stays intact, and trimming requires no hardware encoder.
 
+## Install and update on Windows
+
+Download `Klippit-win-Setup.exe` from the [latest GitHub release](https://github.com/yahya-kousa/Klippit/releases/latest), run Setup, and open **Klippit** from Start.
+
+To update an installed copy, choose **Check for updates…** from the tray. When the download finishes, choose **Restart and update**. Save any replay you want to keep and finish editing first. Restarting clears unsaved replay history and trim marks.
+
 ## Contribute
 
 Klippit is open source under the [GNU General Public License version 3](LICENSE). Bug reports, feature ideas, documentation fixes, and testing on different hardware are welcome.
@@ -69,8 +75,7 @@ Open **Replay Settings** from the tray to set the history length, save hotkey, a
 
 To launch minimized to the tray when you sign in, enable **Launch at Windows sign-in**. Enable **Start replay automatically** as well to fill the buffer whenever Klippit starts. Both options are off by default. Windows starts the app from the path registered when you enable the option. If you move the build, toggle **Launch at Windows sign-in** off and back on from the new copy.
 
-For sign-in launch, make sure Klippit works from Explorer. If Qt is only on your developer terminal's PATH, run `windeployqt build-x64\klippit.exe` from the matching Qt environment first. Put your FFmpeg and ffprobe executables beside Klippit or on your Windows user PATH. [Qt deployment documentation](https://doc.qt.io/qt-6/windows-deployment.html)
-
+If you built Klippit from source, make sure it works from Explorer before enabling sign-in launch. If Qt is only on your developer terminal's PATH, run `windeployqt build-x64\klippit.exe` from the matching Qt environment first. Put your FFmpeg and ffprobe executables beside Klippit or on your Windows user PATH. [Qt deployment documentation](https://doc.qt.io/qt-6/windows-deployment.html)
 
 A separate command-line target supports a 15-second recording or a RAM replay buffer with optional desktop and microphone audio and global save and stop hotkeys. On Windows, use `--desktop-audio` for sound from the default playback device or `--mic "device name"` for a shareable mix of desktop and microphone. Add `--separate-mic` to keep desktop on the first audio track and voice on the second for editing. The [recording benchmark](benchmarks/README.md) covers building it, inspecting the saved clip, and comparing game frame times across recorders. Windows gameplay and encoder compatibility still need hardware validation.
 
@@ -78,32 +83,3 @@ A separate command-line target supports a 15-second recording or a RAM replay bu
 
 - Klippit uses Qt 6. Qt Core handles process management, Qt Widgets provides the editor interface, and Qt Multimedia and Multimedia Widgets handle audio and video preview. [Qt licensing](https://doc.qt.io/qt-6/licensing.html)
 - Klippit invokes FFmpeg and ffprobe for keyframe indexing, stream-copy exports, and experimental Windows recording. [FFmpeg licensing](https://ffmpeg.org/legal.html)
-
-## Test the Windows installer
-
-Maintainers can build an unsigned x64 installer from the **Actions → Windows installer → Run workflow** menu on GitHub. Open the completed run, download the **Klippit-Windows-x64** artifact, extract the ZIP, and open its Setup executable. The installed app is available from Start. Each workflow run builds a test version numbered `0.1.<run number>`.
-
-For the first smoke test, quit any development copy from its tray menu, then use a clean Windows account or VM without Qt or FFmpeg on PATH. Launch from Start, open a clip, preview and export a trim. On a PC with a supported encoder, start replay, save a clip and open it from **Clips to Trim**. Quit and relaunch from Start to check the queue persists. If migrating a development machine, re-enable sign-in launch from the installed copy so Windows uses its executable.
-
-The test installer includes both Klippit executables, Qt's Windows and multimedia plugins, the compiler runtime, FFmpeg and ffprobe. Velopack handles per-user installation and shortcuts. In an installed build, choose **Check for updates…** in the tray to check the latest GitHub Release and download a newer package. Capture continues while it downloads. Choose **Restart and update** when ready. Restarting discards unsaved replay history and trim marks. The editor waits for you to finish an active export, and the recorder finishes requested saves before restart.
-
-### Test an upgrade before publishing
-
-1. Run the installer workflow with **local_update_test** checked. Install that build on your Windows test account.
-2. Run the workflow again with the box unchecked. Extract the second run’s **Klippit-Windows-x64-update** artifact directly into `%LOCALAPPDATA%\Klippit-update-test`. The directory should contain `releases.win.json` and the full `.nupkg`.
-3. In the first build, save a replay and check for updates. Confirm the tray offers the second version, postpone restart, then use the restart action when ready. Verify the saved clip, queue, settings and sign-in preference after relaunch. The newly installed build now checks GitHub.
-
-### Ship a Windows update
-
-Keep `main` releasable. Open a pull request from a short-lived branch when you want to review a change before merging. The **Windows build and tests** check compiles both executables, runs the regression suite and starts the staged editor with the deployed dependencies. A normal push to `main` updates the source. The manual installer workflow is available when you want a downloadable test build.
-
-When a commit on `main` is ready to ship, push a stable version tag. Pick a version higher than the latest release and any test version installed on the PC receiving the update. For example, `v0.2.0` is newer than the `0.1.7` upgrade test.
-
-```sh
-git switch main
-git pull --ff-only
-git tag -a v0.2.0 -m "Klippit 0.2.0"
-git push origin v0.2.0
-```
-
-The tag runs the Windows build, regression tests and startup smoke test. After they pass, Actions publishes Setup, the release manifest and the matching update package together. First-time users download Setup from GitHub Releases. Existing users choose **Check for updates…** in the tray. Klippit downloads the release and waits for them to choose **Restart and update**.
