@@ -158,7 +158,12 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
             const bool success = valid && (stoppedCapture ||
                 (capture.exitStatus() == QProcess::NormalExit && capture.exitCode() == 0));
             if (replay.waitingForFragment()) {
-                QTextStream(stderr) << "Replay stopped before the requested clip could be saved." << Qt::endl;
+                const QString detail = "Replay stopped before the requested clip could be saved.";
+                QTextStream(stderr) << detail << Qt::endl;
+                if (managed) {
+                    const QJsonObject event{{"event", "clip_failed"}, {"detail", detail}};
+                    QTextStream(stdout) << QJsonDocument(event).toJson(QJsonDocument::Compact) << Qt::endl;
+                }
             }
             if (!success) {
                 QTextStream(stderr) << "Replay capture failed. See FFmpeg diagnostics above." << Qt::endl;

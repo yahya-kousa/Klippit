@@ -17,9 +17,11 @@
 #include <QStyle>
 #include <QTimer>
 #include <QUuid>
+#include <iterator>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
+#include <wtsapi32.h>
 #endif
 
 ReplayTray::ReplayTray(Editor &editor) : editor(editor)
@@ -54,6 +56,12 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
     connect(&hotkeyTimeout, &QTimer::timeout, this, [this] {
         finishHotkeyUpdate("The recorder did not confirm the new shortcut.");
     });
+    recoveryTimer.setSingleShot(true);
+    connect(&recoveryTimer, &QTimer::timeout, this, [this] {
+        if (sessionLocked || !recovering || quitting) return;
+        ++recoveryAttempts;
+        start();
+    });
     configureStartup();
 #ifdef KLIPPIT_PACKAGED
     configureUpdates();
@@ -61,8 +69,8 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
     menu.addAction("Quit Klippit", this, [this] {
         if (quitting || QApplication::activeModalWidget() || !this->editor.close()) return;
         quitting = true;
+        stop();
         if (recorder.state() == QProcess::NotRunning) QApplication::quit();
-        else stop();
     });
 
     connect(&tray, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
@@ -72,7 +80,11 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
         while (recorder.canReadLine()) {
             const auto event = QJsonDocument::fromJson(recorder.readLine()).object();
             const auto name = event["event"].toString();
-            if (name == "replay_ready") bufferReady = true;
+            if (name == "replay_ready") {
+                bufferReady = true;
+                recovering = false;
+                recoveryAttempts = 0;
+            }
             if ((name == "replay_ready" || name == "save_hotkey_changed") && bufferReady && stopAction->isEnabled())
                 setStatus("Replay is buffering · Save with " + event["save_hotkey"].toString());
             if (!pendingHotkey.isEmpty() && event["requested"].toString() == pendingHotkey) {
@@ -98,9 +110,15 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
             }
         }
     });
-    connect(&recorder, &QProcess::readyReadStandardError, this, [this] {
-        diagnostics = (diagnostics + QString::fromUtf8(recorder.readAllStandardError())).right(4000);
-    });
+    const auto readDiagnostics = [this] {
+        diagnostics += QString::fromUtf8(recorder.readAllStandardError());
+        // ddagrab reports the HRESULT when acquiring a frame, but omits it
+        // when releasing one. Either call can fail when the desktop switches.
+        displayCaptureInterrupted |= diagnostics.contains("887a0026", Qt::CaseInsensitive) ||
+                                     diagnostics.contains("DDA ReleaseFrame failed", Qt::CaseInsensitive);
+        diagnostics = diagnostics.right(4000);
+    };
+    connect(&recorder, &QProcess::readyReadStandardError, this, readDiagnostics);
     connect(&recorder, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error != QProcess::FailedToStart) return;
         finishHotkeyUpdate("Replay could not start.");
@@ -110,11 +128,19 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
 #endif
         if (quitting) QApplication::quit();
     });
-    connect(&recorder, &QProcess::finished, this, [this](int code, QProcess::ExitStatus exit) {
+    connect(&recorder, &QProcess::finished, this, [this, readDiagnostics](int code, QProcess::ExitStatus exit) {
+        readDiagnostics();
         finishHotkeyUpdate("Replay ended before confirming the new shortcut.");
-        if (code != 0 || exit != QProcess::NormalExit)
+        if (code != 0 || exit != QProcess::NormalExit) {
+            if (exit == QProcess::NormalExit && !quitting && stopAction->isEnabled() &&
+                (displayCaptureInterrupted || sessionLocked || recovering)) {
+                scheduleRecovery();
+                return;
+            }
             reportFailure(QString("Recorder exited with code %1.").arg(code));
-        else {
+        } else {
+            recovering = false;
+            recoveryAttempts = 0;
             startAction->setEnabled(true);
             stopAction->setEnabled(false);
             setStatus("Replay is off");
@@ -127,6 +153,11 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
 
     setStatus("Replay is off");
 #ifdef Q_OS_WIN
+    const auto window = reinterpret_cast<HWND>(editor.winId());
+    if (WTSRegisterSessionNotification(window, NOTIFY_FOR_THIS_SESSION)) {
+        sessionWindow = reinterpret_cast<quintptr>(window);
+        QApplication::instance()->installNativeEventFilter(this);
+    }
     recorder.setCreateProcessArgumentsModifier([](auto *args) {
         args->flags |= CREATE_NO_WINDOW;
     });
@@ -134,6 +165,55 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
     tray.setIcon(QApplication::style()->standardIcon(QStyle::SP_MediaPlay));
     tray.setContextMenu(&menu);
     tray.show();
+}
+
+ReplayTray::~ReplayTray()
+{
+#ifdef Q_OS_WIN
+    if (sessionWindow) {
+        QApplication::instance()->removeNativeEventFilter(this);
+        WTSUnRegisterSessionNotification(reinterpret_cast<HWND>(sessionWindow));
+    }
+#endif
+}
+
+bool ReplayTray::nativeEventFilter(const QByteArray &eventType, void *message, qintptr *)
+{
+#ifdef Q_OS_WIN
+    if (eventType != "windows_generic_MSG") return false;
+    const auto *event = static_cast<const MSG *>(message);
+    if (event->message != WM_WTSSESSION_CHANGE ||
+        reinterpret_cast<quintptr>(event->hwnd) != sessionWindow) return false;
+
+    if (event->wParam == WTS_SESSION_LOCK) {
+        sessionLocked = true;
+        if (recovering) scheduleRecovery();
+    } else if (event->wParam == WTS_SESSION_UNLOCK) {
+        sessionLocked = false;
+        if (recovering && recorder.state() == QProcess::NotRunning) {
+            recoveryAttempts = 0;
+            scheduleRecovery();
+        }
+    }
+#endif
+    return false;
+}
+
+void ReplayTray::scheduleRecovery()
+{
+    constexpr int retryDelaysMs[] = {1000, 2000, 4000, 8000, 16000};
+    recovering = true;
+    recoveryTimer.stop();
+    if (sessionLocked) {
+        setStatus("Replay interrupted · Waiting for Windows unlock");
+        return;
+    }
+    if (recoveryAttempts >= int(std::size(retryDelaysMs))) {
+        reportFailure("Could not reconnect replay capture. Try starting replay again.");
+        return;
+    }
+    setStatus("Replay interrupted · Reconnecting…");
+    recoveryTimer.start(retryDelaysMs[recoveryAttempts]);
 }
 
 void ReplayTray::updateHotkey(const QString &shortcut)
@@ -183,8 +263,8 @@ void ReplayTray::configureUpdates()
         if (answer != QMessageBox::Yes || !editor.close()) return;
         quitting = restarting = true;
         updateAction->setEnabled(false);
+        stop();
         if (recorder.state() == QProcess::NotRunning) completeRestart(true);
-        else stop();
     });
     auto checkFailed = [this](const QString &reason) {
         updateAction->setText("Check for updates…");
@@ -272,6 +352,7 @@ void ReplayTray::start()
 {
     if (recorder.state() != QProcess::NotRunning || quitting) return;
     bufferReady = false;
+    displayCaptureInterrupted = false;
     diagnostics.clear();
     details->setVisible(false);
     const auto executable = QDir(QCoreApplication::applicationDirPath()).filePath("klippit-record.exe");
@@ -291,13 +372,21 @@ void ReplayTray::start()
     const auto output = QDir(folder).filePath("Replay-" + stamp + "-" + id + ".mkv");
     startAction->setEnabled(false);
     stopAction->setEnabled(true);
-    setStatus("Starting replay…");
+    setStatus(recovering ? "Replay interrupted · Reconnecting…" : "Starting replay…");
     recorder.start(executable, QStringList{"--replay", "--managed"} + replaySettingsArguments() + QStringList{output});
 }
 
 void ReplayTray::stop()
 {
+    recoveryTimer.stop();
+    recovering = false;
+    recoveryAttempts = 0;
     stopAction->setEnabled(false);
+    if (recorder.state() == QProcess::NotRunning) {
+        startAction->setEnabled(true);
+        setStatus("Replay is off");
+        return;
+    }
     setStatus("Stopping replay…");
     // Closing stdin asks the recorder to drain accepted saves before exiting.
     recorder.closeWriteChannel();
@@ -316,6 +405,9 @@ void ReplayTray::setStatus(const QString &message)
 
 void ReplayTray::reportFailure(const QString &message)
 {
+    recoveryTimer.stop();
+    recovering = false;
+    recoveryAttempts = 0;
     diagnostics = message + "\n\n" + diagnostics.trimmed();
     details->setVisible(true);
     startAction->setEnabled(true);

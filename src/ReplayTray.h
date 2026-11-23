@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QAbstractNativeEventFilter>
 #include <QMenu>
 #include <QProcess>
 #include <QSystemTrayIcon>
@@ -7,9 +8,10 @@
 
 class Editor;
 
-class ReplayTray : public QObject {
+class ReplayTray : public QObject, private QAbstractNativeEventFilter {
 public:
     explicit ReplayTray(Editor &editor);
+    ~ReplayTray() override;
     bool isAvailable() const { return tray.isVisible(); }
 
 private:
@@ -21,6 +23,8 @@ private:
     QString updateVersion;
     bool restarting = false;
 #endif
+    bool nativeEventFilter(const QByteArray &, void *message, qintptr *) override;
+    void scheduleRecovery();
     void configureStartup();
     void start();
     void stop();
@@ -40,6 +44,12 @@ private:
     QAction *details;
     QAction *settingsAction;
     QTimer hotkeyTimeout;
+    QTimer recoveryTimer;
+    quintptr sessionWindow = 0;
+    int recoveryAttempts = 0;
+    bool sessionLocked = false;
+    bool recovering = false;
+    bool displayCaptureInterrupted = false;
     QString pendingHotkey;
     QString diagnostics;
     bool bufferReady = false;
