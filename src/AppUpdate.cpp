@@ -4,14 +4,16 @@
 #include <cstdio>
 
 namespace {
-std::string updateFeed()
+Velopack::UpdateManager makeUpdateManager()
 {
 #ifdef KLIPPIT_LOCAL_UPDATE_TEST
     const QString base = qEnvironmentVariable("LOCALAPPDATA");
     if (base.isEmpty()) throw std::runtime_error("LOCALAPPDATA is unavailable.");
-    return (base + "/Klippit-update-test").toStdString();
+    return Velopack::UpdateManager((base + "/Klippit-update-test").toStdString());
 #else
-    return "https://github.com/yahya-kousa/Klippit/releases/latest/download/";
+    // GitHubSource resolves release assets from the repository URL.
+    return Velopack::UpdateManager(std::make_unique<Velopack::GithubSource>(
+        "https://github.com/yahya-kousa/Klippit"));
 #endif
 }
 }
@@ -19,7 +21,7 @@ std::string updateFeed()
 int prepareAppUpdate()
 {
     try {
-        Velopack::UpdateManager manager(updateFeed());
+        auto manager = makeUpdateManager();
         auto pending = manager.UpdatePendingRestart();
         if (!pending) {
             const auto update = manager.CheckForUpdates();
@@ -39,7 +41,7 @@ int prepareAppUpdate()
 QString scheduleAppUpdate(const QString &expectedVersion)
 {
     try {
-        Velopack::UpdateManager manager(updateFeed());
+        auto manager = makeUpdateManager();
         const auto pending = manager.UpdatePendingRestart();
         if (!pending || QString::fromStdString(pending->Version) != expectedVersion)
             return QStringLiteral("The downloaded update changed. Check for updates again.");
