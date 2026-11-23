@@ -2,6 +2,6 @@
 
 #include <QString>
 
-// The short-lived worker writes the downloaded version to stdout (empty if current).
-int prepareAppUpdate();
+// The worker writes the available version to stdout (empty if current).
+int checkAppUpdate(bool download);
 QString scheduleAppUpdate(const QString &expectedVersion);

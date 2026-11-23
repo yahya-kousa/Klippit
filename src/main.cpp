@@ -46,7 +46,11 @@ int main(int argc, char **argv)
 #ifdef KLIPPIT_PACKAGED
     // Installer hooks must run before the single-instance check.
     Velopack::VelopackApp::Build().SetAutoApplyOnStartup(false).Run();
-    if (argc == 2 && QByteArrayView(argv[1]) == "--prepare-update") return prepareAppUpdate();
+    if (argc == 2) {
+        const QByteArrayView argument(argv[1]);
+        if (argument == "--check-update") return checkAppUpdate(false);
+        if (argument == "--prepare-update") return checkAppUpdate(true);
+    }
 #endif
     bool signIn = false;
     for (int i = 1; i < argc; ++i)

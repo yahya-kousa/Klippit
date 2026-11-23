@@ -12,7 +12,7 @@ During an update, capture continues while the package downloads. Finish any acti
 
 1. Run the installer workflow with **local_update_test** checked. Install that build on your Windows test account.
 2. Run the workflow again with the box unchecked. Extract the second run’s **Klippit-Windows-x64-update** artifact directly into `%LOCALAPPDATA%\Klippit-update-test`. The directory should contain `releases.win.json` and the full `.nupkg`.
-3. In the first build, save a replay and check for updates. Confirm the tray offers the second version, postpone restart, then use the restart action when ready. Verify the saved clip, queue, settings and sign-in preference after relaunch. The newly installed build now checks GitHub.
+3. In the first build, save a replay and quit Klippit. Start it again and wait for the tray to offer the second version automatically. Select **Download update**, wait for **Restart and update**, and verify that replay still works before restarting. After relaunch, check the saved clip, queue, settings and sign-in preference. The newly installed build now checks GitHub.
 
 ## Ship a Windows update
 

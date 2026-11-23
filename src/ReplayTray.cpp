@@ -251,9 +251,7 @@ void ReplayTray::configureUpdates()
     updateAction = menu.addAction("Check for updates…", this, [this] {
         if (quitting || QApplication::activeModalWidget()) return;
         if (updateVersion.isEmpty()) {
-            updateAction->setEnabled(false);
-            updateAction->setText("Checking for updates…");
-            updateWorker.start(QCoreApplication::applicationFilePath(), {"--prepare-update"});
+            checkForUpdates(true);
             return;
         }
         const auto answer = QMessageBox::question(&editor, "Restart and update",
@@ -267,9 +265,10 @@ void ReplayTray::configureUpdates()
         if (recorder.state() == QProcess::NotRunning) completeRestart(true);
     });
     auto checkFailed = [this](const QString &reason) {
-        updateAction->setText("Check for updates…");
-        updateAction->setEnabled(true);
-        tray.showMessage("Update check failed", reason, QSystemTrayIcon::Warning);
+        if (quitting) return;
+        refreshUpdateAction();
+        if (!backgroundUpdateCheck)
+            tray.showMessage("Update check failed", reason, QSystemTrayIcon::Warning);
     };
     connect(&updateWorker, &QProcess::errorOccurred, this, [this, checkFailed](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) checkFailed(updateWorker.errorString());
@@ -277,17 +276,49 @@ void ReplayTray::configureUpdates()
     connect(&updateWorker, &QProcess::finished, this, [this, checkFailed](int code, QProcess::ExitStatus status) {
         const QString version = QString::fromUtf8(updateWorker.readAllStandardOutput()).trimmed();
         const QString diagnostic = QString::fromUtf8(updateWorker.readAllStandardError()).trimmed();
+        if (quitting) return;
         if (status != QProcess::NormalExit || code != 0) {
             checkFailed(diagnostic.isEmpty() ? "Update worker exited unexpectedly." : diagnostic);
             return;
         }
-        updateVersion = version;
-        updateAction->setEnabled(true);
-        updateAction->setText(version.isEmpty() ? QStringLiteral("Check for updates…")
-                                               : QString("Restart and update to %1…").arg(version));
+        const bool newVersion = version != availableUpdateVersion;
+        availableUpdateVersion = version;
+        if (!backgroundUpdateCheck) updateVersion = version;
+        refreshUpdateAction();
+        if (backgroundUpdateCheck) {
+            if (newVersion && !version.isEmpty()) {
+                tray.showMessage("Klippit update available",
+                    QString("Version %1 is available. Open the tray menu to download it.").arg(version));
+            }
+            return;
+        }
         tray.showMessage("Klippit updates", version.isEmpty() ? QStringLiteral("You're up to date.")
             : QString("Version %1 is ready. Restart from the tray when convenient.").arg(version));
     });
+    QTimer::singleShot(10000, this, [this] { checkForUpdates(false); });
+    connect(&updateCheckTimer, &QTimer::timeout, this, [this] { checkForUpdates(false); });
+    updateCheckTimer.start(6 * 60 * 60 * 1000);
+}
+
+void ReplayTray::checkForUpdates(bool download)
+{
+    if (quitting || !updateVersion.isEmpty() || updateWorker.state() != QProcess::NotRunning) return;
+    backgroundUpdateCheck = !download;
+    updateAction->setEnabled(false);
+    updateAction->setText("Checking for updates…");
+    updateWorker.start(QCoreApplication::applicationFilePath(),
+                       {download ? "--prepare-update" : "--check-update"});
+}
+
+void ReplayTray::refreshUpdateAction()
+{
+    if (!updateVersion.isEmpty())
+        updateAction->setText(QString("Restart and update to %1…").arg(updateVersion));
+    else if (!availableUpdateVersion.isEmpty())
+        updateAction->setText(QString("Download update %1…").arg(availableUpdateVersion));
+    else
+        updateAction->setText("Check for updates…");
+    updateAction->setEnabled(true);
 }
 
 void ReplayTray::completeRestart(bool recorderStoppedCleanly)
@@ -300,8 +331,7 @@ void ReplayTray::completeRestart(bool recorderStoppedCleanly)
     }
     restarting = quitting = false;
     updateVersion.clear();
-    updateAction->setEnabled(true);
-    updateAction->setText("Check for updates…");
+    refreshUpdateAction();
     showEditor();
     tray.showMessage("Update postponed", error, QSystemTrayIcon::Warning);
 }
