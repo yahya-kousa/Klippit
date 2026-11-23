@@ -2,6 +2,12 @@
 
 Klippit is a keyboard-driven desktop app for trimming gameplay recordings without re-encoding. Open a replay, mark a highlight, and save it as a new MP4 or MKV. The original recording stays intact, and trimming requires no hardware encoder.
 
+## Contribute
+
+Klippit is open source under the [GNU General Public License version 3](LICENSE). Bug reports, feature ideas, documentation fixes, and testing on different hardware are welcome.
+
+[Report a bug](https://github.com/yahya-kousa/Klippit/issues/new?template=bug_report.yml) · [Suggest a feature](https://github.com/yahya-kousa/Klippit/issues/new?template=feature_request.yml) · [Contributing guide](CONTRIBUTING.md)
+
 ## Trim a clip
 
 | Action | Control |
@@ -37,9 +43,9 @@ If CMake cannot find Qt, add `-DCMAKE_PREFIX_PATH="<Qt kit directory>"` to the c
 
 Run `./build/klippit` on Linux or `.\build\klippit.exe` in Windows PowerShell. On macOS, open the generated app bundle if your Qt kit produces one, or run `./build/klippit`.
 
-## Run the trim regression test
+## Run the regression tests
 
-With Python 3, ffmpeg, and ffprobe available, enable the test from the repository root:
+With Python 3, ffmpeg, and ffprobe available, enable the tests from the repository root:
 
 ```sh
 cmake -S . -B build -DBUILD_TESTING=ON
@@ -47,13 +53,13 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-The test generates a temporary 60 FPS recording with two audio tracks, runs the range calculation and exporter used by the editor, and compares MP4 and MKV exports against the source. It runs without opening a window.
+The suite runs without opening a window. The trim test generates a temporary 60 FPS recording with two audio tracks and checks MP4 and MKV exports against the source. Other tests cover capture startup, replay buffering, and recording metrics.
 
 ## Project status
 
 Klippit is an early single-range editor for existing recordings. The **Clips to Trim** queue shows replays saved by the recorder, including saves made while the editor is closed. Open a clip to trim it, then mark it done to move it to **Show completed**. Both views persist across restarts and keep the source MKV in its original location. Edits last until you open another recording or quit. The experimental Windows recorder can retain recent video in RAM and save it with a hotkey.
 
-The editor and export workflow have been tested on CachyOS with a 1440p Overwatch recording. All 300 decoded frames in a five-second export matched the corresponding source frames, and the AAC packet payloads matched the source. Windows and macOS GUI builds still need verification.
+The editor and export workflow have been tested on CachyOS with a 1440p Overwatch recording. All 300 decoded frames in a five-second export matched the corresponding source frames, and the AAC packet payloads matched the source. The Windows installer workflow also tests editor startup. The macOS GUI build still needs verification.
 
 ## Experimental Windows recorder
 
@@ -89,7 +95,7 @@ The test installer includes both Klippit executables, Qt's Windows and multimedi
 
 ### Ship a Windows update
 
-Keep `main` releasable. Use a short-lived branch for changes you want to review or test before merging. A normal push to `main` updates the source. The manual installer workflow is available for testing that commit.
+Keep `main` releasable. Open a pull request from a short-lived branch when you want to review a change before merging. The **Windows build and tests** check compiles both executables, runs the regression suite and starts the staged editor with the deployed dependencies. A normal push to `main` updates the source. The manual installer workflow is available when you want a downloadable test build.
 
 When a commit on `main` is ready to ship, push a stable version tag. Pick a version higher than the latest release and any test version installed on the PC receiving the update. For example, `v0.2.0` is newer than the `0.1.7` upgrade test.
 

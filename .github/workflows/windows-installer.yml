@@ -1,5 +1,7 @@
 name: Windows installer
 on:
+  pull_request:
+    branches: [main]
   push:
     tags:
       - 'v*'
@@ -15,14 +17,16 @@ permissions:
 
 jobs:
   package:
+    name: Windows build and tests
     runs-on: windows-2022
     env:
       QT_VERSION: 6.8.3
       VELO_VERSION: 1.2.0
       FFMPEG_VERSION: 8.1.1
-      LOCAL_UPDATE_TEST: ${{ inputs.local_update_test && 'ON' || 'OFF' }}
+      LOCAL_UPDATE_TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.local_update_test && 'ON' || 'OFF' }}
     steps:
       - name: Set package version
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           if ($env:GITHUB_REF_TYPE -eq 'tag') {
@@ -64,7 +68,11 @@ jobs:
           $ff = Resolve-Path "build-deps/ffmpeg/ffmpeg-$env:FFMPEG_VERSION-essentials_build"
           "$ff/bin" >> $env:GITHUB_PATH
           "FFMPEG_ROOT=$ff" >> $env:GITHUB_ENV
-          dotnet tool install vpk --tool-path build-deps/tools --version $env:VELO_VERSION
+
+      - name: Install Velopack CLI
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        run: dotnet tool install vpk --tool-path build-deps/tools --version $env:VELO_VERSION
 
       - name: Build, test and deploy
         shell: pwsh
@@ -121,6 +129,7 @@ jobs:
           }
 
       - name: Package installer and update
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
@@ -131,11 +140,13 @@ jobs:
             throw 'Full update package missing from the generated release feed'
           }
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: Klippit-Windows-x64
           path: out/installer/*Setup.exe
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: Klippit-Windows-x64-update
           path: |

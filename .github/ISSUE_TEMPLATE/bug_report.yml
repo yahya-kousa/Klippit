@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a problem with Klippit
+body:
+  - type: input
+    id: environment
+    attributes:
+      label: Klippit version and operating system
+      placeholder: "Example: Klippit 0.2.1 on Windows 11"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include what you were doing and the shortest steps that trigger the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Additional details
+      description: Include relevant logs or screenshots if available. For replay problems, GPU, encoder, audio mode and capture settings can help. Remove private information before posting.

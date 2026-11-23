@@ -1,0 +1,17 @@
+name: Feature request
+description: Suggest an improvement to Klippit
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: What are you trying to do?
+      description: Describe the workflow and where you get stuck or lose time.
+    validations:
+      required: true
+  - type: textarea
+    id: improvement
+    attributes:
+      label: What would help?
+      description: Describe the behavior you would like. A specific implementation is optional.
+    validations:
+      required: true
