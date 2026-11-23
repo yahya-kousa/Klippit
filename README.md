@@ -87,4 +87,17 @@ The test installer includes both Klippit executables, Qt's Windows and multimedi
 2. Run the workflow again with the box unchecked. Extract the second run’s **Klippit-Windows-x64-update** artifact directly into `%LOCALAPPDATA%\Klippit-update-test`. The directory should contain `releases.win.json` and the full `.nupkg`.
 3. In the first build, save a replay and check for updates. Confirm the tray offers the second version, postpone restart, then use the restart action when ready. Verify the saved clip, queue, settings and sign-in preference after relaunch. The newly installed build now checks GitHub.
 
-For a public release, attach Setup.exe (using its generated filename), `releases.win.json` and its matching full package from the **same normal workflow run** to the GitHub Release marked latest. Extract the artifacts before uploading the files. The workflow only builds artifacts. A published release with those assets is needed for the public update feed.
+### Ship a Windows update
+
+Keep `main` releasable. Use a short-lived branch for changes you want to review or test before merging. A normal push to `main` updates the source. The manual installer workflow is available for testing that commit.
+
+When a commit on `main` is ready to ship, push a stable version tag. Pick a version higher than the latest release and any test version installed on the PC receiving the update. For example, `v0.2.0` is newer than the `0.1.7` upgrade test.
+
+```sh
+git switch main
+git pull --ff-only
+git tag -a v0.2.0 -m "Klippit 0.2.0"
+git push origin v0.2.0
+```
+
+The tag runs the Windows build, regression tests and startup smoke test. After they pass, Actions publishes Setup, the release manifest and the matching update package together. First-time users download Setup from GitHub Releases. Existing users choose **Check for updates…** in the tray. Klippit downloads the release and waits for them to choose **Restart and update**.

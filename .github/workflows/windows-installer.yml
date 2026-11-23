@@ -1,5 +1,8 @@
 name: Windows installer
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       local_update_test:
@@ -19,6 +22,19 @@ jobs:
       FFMPEG_VERSION: 8.1.1
       LOCAL_UPDATE_TEST: ${{ inputs.local_update_test && 'ON' || 'OFF' }}
     steps:
+      - name: Set package version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            if ($env:GITHUB_REF_NAME -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+              throw 'Use a stable version tag in vMAJOR.MINOR.PATCH format.'
+            }
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $version = "0.1.$env:GITHUB_RUN_NUMBER"
+          }
+          "PACK_VERSION=$version" >> $env:GITHUB_ENV
+
       - uses: actions/checkout@v4
       - uses: jurplel/install-qt-action@v4
         with:
@@ -104,14 +120,14 @@ jobs:
             Get-Content -LiteralPath $log
           }
 
-      - name: Create local-test installer
+      - name: Package installer and update
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          ./build-deps/tools/vpk.exe pack --packId Klippit --packVersion "0.1.$env:GITHUB_RUN_NUMBER" --mainExe klippit.exe --runtime win-x64 --packDir out/app --outputDir out/installer
+          ./build-deps/tools/vpk.exe pack --packId Klippit --packVersion $env:PACK_VERSION --mainExe klippit.exe --runtime win-x64 --packDir out/app --outputDir out/installer
           $feed = Get-Content out/installer/releases.win.json -Raw | ConvertFrom-Json
           $full = @($feed.Assets | Where-Object Type -eq Full)
-          if ($full.Count -ne 1 -or !(Test-Path -LiteralPath (Join-Path out/installer $full[0].FileName))) {
+          if ($full.Count -ne 1 -or $full[0].Version -ne $env:PACK_VERSION -or !(Test-Path -LiteralPath (Join-Path out/installer $full[0].FileName))) {
             throw 'Full update package missing from the generated release feed'
           }
       - uses: actions/upload-artifact@v4
@@ -126,3 +142,40 @@ jobs:
             out/installer/releases.win.json
             out/installer/*-full.nupkg
           if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: klippit-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Klippit-Windows-x64*
+          merge-multiple: true
+          path: release
+
+      - name: Publish Windows release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          latest="$(gh release list --limit 100 --json isLatest,tagName --jq '.[] | select(.isLatest) | .tagName')"
+          if [[ -n "$latest" ]]; then
+            if [[ ! "$latest" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Latest release has an unexpected tag: $latest" >&2
+              exit 1
+            fi
+            highest="$(printf '%s\n' "$latest" "$GITHUB_REF_NAME" | sort -V | tail -n 1)"
+            if [[ "$latest" == "$GITHUB_REF_NAME" || "$highest" != "$GITHUB_REF_NAME" ]]; then
+              echo "Release $GITHUB_REF_NAME must be newer than $latest." >&2
+              exit 1
+            fi
+          fi
+          gh release create "$GITHUB_REF_NAME" release/*Setup.exe release/releases.win.json release/*-full.nupkg \
+            --verify-tag --generate-notes --latest --title "Klippit $GITHUB_REF_NAME"
