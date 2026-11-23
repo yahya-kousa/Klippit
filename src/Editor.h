@@ -4,6 +4,7 @@
 #include <QMediaPlayer>
 #include <QAudioOutput>
 #include <QProcess>
+#include <optional>
 #include <vector>
 
 class TimelineSlider;
@@ -15,7 +16,10 @@ class Editor : public QWidget {
     QAudioOutput audio;
     ClipExporter exporter;
     QProcess probe;
-    std::vector<qint64> keysUs;
+    QProcess frameProbe;
+    std::vector<qint64> keysUs, frameTimesUs;
+    std::optional<qint64> steppedFrameUs;
+    int pendingStep = 0;
 
     TimelineSlider *timeline;
     ClipMarkers *markers;
@@ -24,10 +28,13 @@ class Editor : public QWidget {
     QLabel *status;
     QString source, destination;
     qint64 exportStartUs = 0, exportDurationUs = 0;
-    qint64 start = 0, end = 0;
+    qint64 startUs = 0, endUs = 0;
     bool previewing = false, edited = false;
 
+    qint64 playheadUs() const;
     void refresh();
+    void clearFrameStep();
+    void stepFrame(int direction);
 
     void open();
     void openFile(const QString &file);
