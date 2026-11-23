@@ -158,6 +158,8 @@ void Editor::showClipQueue()
     auto *openClip = buttons->addButton("Open Clip", QDialogButtonBox::AcceptRole);
     auto *changeState = buttons->addButton("Mark Done", QDialogButtonBox::ActionRole);
     auto *trash = buttons->addButton("Trash original…", QDialogButtonBox::ActionRole);
+    auto *remove = buttons->addButton("Remove from queue", QDialogButtonBox::ActionRole);
+    remove->setToolTip("Forget this queue entry and keep any files on disk.");
     layout->addWidget(completed);
     layout->addWidget(list);
     layout->addWidget(message);
@@ -169,6 +171,7 @@ void Editor::showClipQueue()
         const int row = list->currentRow();
         openClip->setEnabled(row >= 0 && QFileInfo(entries.at(row).path).isFile());
         trash->setEnabled(openClip->isEnabled());
+        remove->setEnabled(row >= 0 && (completed->isChecked() || !openClip->isEnabled()));
         changeState->setEnabled(row >= 0);
     };
     auto refreshQueue = [&] {
@@ -219,6 +222,20 @@ void Editor::showClipQueue()
         const bool changed = queue.setCompleted(entries.at(row), !completed->isChecked());
         refreshQueue();
         if (!changed) message->setText("Could not update this clip's queue status.");
+    });
+    connect(remove, &QPushButton::clicked, &dialog, [&] {
+        const int row = list->currentRow();
+        if (row < 0) return;
+        const auto &entry = entries.at(row);
+        const bool done = completed->isChecked();
+        if (!done && QFileInfo(entry.path).isFile()) {
+            refreshQueue();
+            message->setText("This replay is available again.");
+            return;
+        }
+        const bool removed = queue.removeEntry(entry, done);
+        refreshQueue();
+        if (!removed) message->setText("Could not remove this queue entry.");
     });
     connect(trash, &QPushButton::clicked, &dialog, [&] {
         const int row = list->currentRow();
