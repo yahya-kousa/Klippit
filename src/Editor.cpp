@@ -66,12 +66,14 @@ void Editor::openFile(const QString &file)
     startUs = endUs = 0;
     timeline->setRange(0, 0);
     updateQueueActions();
+    resumeEditing->setEnabled(!file.isEmpty());
     if (file.isEmpty()) {
         player.setSource({});
         title->setText("Open a replay");
         refresh();
         return;
     }
+    pages->setCurrentWidget(editPage);
     title->setText(QFileInfo(file).fileName());
     status->clear();
     status->setText("Finding keyframes…");
@@ -250,6 +252,7 @@ void Editor::showClipQueue()
     if (!watching) message->setText("Reopen Clips to Trim to see new saves.");
     if (dialog.exec() == QDialog::Accepted) openFile(selectedPath);
     else updateQueueActions();
+    refreshHome();
 }
 
 void Editor::stepFrame(int direction)
@@ -399,6 +402,70 @@ void Editor::addSettingsAction(QAction *action)
     settingsMenu->addAction(action);
 }
 
+void Editor::setReplayActions(QAction *state, QAction *start, QAction *stop)
+{
+    startReplay->setDefaultAction(start);
+    stopReplay->setDefaultAction(stop);
+    startReplay->show();
+    stopReplay->show();
+    const auto updateStatus = [this, state] { replayStatus->setText(state->text()); };
+    connect(state, &QAction::changed, this, updateStatus);
+    updateStatus();
+}
+
+void Editor::setupHome()
+{
+    auto *layout = new QVBoxLayout(homePage);
+    layout->setContentsMargins(24, 24, 24, 24);
+    layout->setSpacing(12);
+
+    auto *heading = new QLabel("Klippit");
+    auto headingFont = heading->font();
+    headingFont.setPointSize(headingFont.pointSize() + 10);
+    headingFont.setBold(true);
+    heading->setFont(headingFont);
+    layout->addWidget(heading);
+
+    replayStatus = new QLabel("Replay capture is unavailable on this device.");
+    replayStatus->setWordWrap(true);
+    layout->addWidget(replayStatus);
+    auto *replayControls = new QHBoxLayout;
+    startReplay = new QToolButton;
+    stopReplay = new QToolButton;
+    for (auto *button : {startReplay, stopReplay}) {
+        button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        button->hide();
+        replayControls->addWidget(button);
+    }
+    replayControls->addStretch();
+    layout->addLayout(replayControls);
+
+    homeQueue = new QPushButton;
+    connect(homeQueue, &QPushButton::clicked, this, &Editor::showClipQueue);
+    auto *openFileButton = new QPushButton("Open file…");
+    connect(openFileButton, &QPushButton::clicked, this, &Editor::open);
+    resumeEditing = new QPushButton("Resume editing");
+    connect(resumeEditing, &QPushButton::clicked, this, [this] { pages->setCurrentWidget(editPage); });
+    auto *clipControls = new QHBoxLayout;
+    for (auto *button : {homeQueue, openFileButton, resumeEditing}) clipControls->addWidget(button);
+    clipControls->addStretch();
+    layout->addLayout(clipControls);
+    layout->addStretch();
+
+    auto *watcher = new QFileSystemWatcher(this);
+    const ClipQueue queue;
+    if (queue.ensureDirectory()) watcher->addPath(queue.directory());
+    connect(watcher, &QFileSystemWatcher::directoryChanged, this, &Editor::refreshHome);
+    refreshHome();
+}
+
+void Editor::refreshHome()
+{
+    const auto pending = ClipQueue().entries(false).size();
+    homeQueue->setText(QString("Clips to Trim (%1)").arg(pending));
+    resumeEditing->setEnabled(!source.isEmpty());
+}
+
 Editor::Editor()
     : timeline(new TimelineSlider),
       markers(new ClipMarkers(timeline)),
@@ -407,20 +474,49 @@ Editor::Editor()
       status(new QLabel),
       markDoneButton(new QPushButton("Mark done")),
       trashButton(new QPushButton("Trash original…")),
-      settingsMenu(new QMenu(this))
+      settingsMenu(new QMenu(this)),
+      pages(new QStackedWidget(this)),
+      homePage(new QWidget),
+      editPage(new QWidget)
 {
     setWindowTitle("Klippit");
     resize(960, 640);
-    auto *layout = new QVBoxLayout(this);
+    auto *windowLayout = new QVBoxLayout(this);
+    auto *navigation = new QHBoxLayout;
+    auto *homeButton = new QPushButton("Back to Home");
+    navigation->addWidget(homeButton);
+    navigation->addStretch();
+    auto *settingsButton = new QPushButton("Settings");
+    settingsButton->setMenu(settingsMenu);
+    navigation->addWidget(settingsButton);
+    settingsMenu->addAction("Save folders…", this, [this] { editSaveFolders(*this); });
+    windowLayout->addLayout(navigation);
+    windowLayout->addWidget(pages, 1);
+    setupHome();
+    pages->addWidget(homePage);
+    pages->addWidget(editPage);
+    homeButton->hide();
+    connect(pages, &QStackedWidget::currentChanged, this, [this, homeButton] {
+        homeButton->setVisible(pages->currentWidget() == editPage);
+    });
+    connect(homeButton, &QPushButton::clicked, this, [this] {
+        if (exporter.isBusy()) {
+            status->setText("Export in progress. Return to Home after it finishes.");
+            return;
+        }
+        previewing = false;
+        player.pause();
+        refreshHome();
+        pages->setCurrentWidget(homePage);
+    });
+    connect(new QShortcut(QKeySequence::Open, this), &QShortcut::activated, this, &Editor::open);
+
+    auto *layout = new QVBoxLayout(editPage);
     auto *video = new QVideoWidget;
     auto *heading = new QHBoxLayout;
     heading->addWidget(title, 1);
     heading->addWidget(markDoneButton);
     heading->addWidget(trashButton);
-    auto *settingsButton = new QPushButton("Settings");
-    settingsButton->setMenu(settingsMenu);
-    heading->addWidget(settingsButton);
-    settingsMenu->addAction("Save folders…", this, [this] { editSaveFolders(*this); });
     layout->addLayout(heading);
     updateQueueActions();
     connect(markDoneButton, &QPushButton::clicked, this, &Editor::markDone);
@@ -443,9 +539,12 @@ Editor::Editor()
         button->setFocusPolicy(Qt::NoFocus);
         buttons->addWidget(button);
         connect(button, &QPushButton::clicked, this, fn);
-        connect(new QShortcut(key, this), &QShortcut::activated, this, fn);
+        connect(new QShortcut(key, editPage), &QShortcut::activated, this, fn);
     };
-    action("Open   Ctrl+O", QKeySequence::Open, [this]{ open(); });
+    auto *openButton = new QPushButton("Open   Ctrl+O");
+    openButton->setFocusPolicy(Qt::NoFocus);
+    buttons->addWidget(openButton);
+    connect(openButton, &QPushButton::clicked, this, &Editor::open);
     auto *queueButton = new QPushButton("Clips to Trim");
     queueButton->setFocusPolicy(Qt::NoFocus);
     buttons->addWidget(queueButton);
@@ -455,8 +554,8 @@ Editor::Editor()
         if (player.playbackState() == QMediaPlayer::PlayingState) player.pause();
         else { clearFrameStep(); player.play(); refresh(); }
     });
-    connect(new QShortcut(Qt::Key_Comma, this), &QShortcut::activated, this, [this]{ stepFrame(-1); });
-    connect(new QShortcut(Qt::Key_Period, this), &QShortcut::activated, this, [this]{ stepFrame(1); });
+    connect(new QShortcut(Qt::Key_Comma, editPage), &QShortcut::activated, this, [this]{ stepFrame(-1); });
+    connect(new QShortcut(Qt::Key_Period, editPage), &QShortcut::activated, this, [this]{ stepFrame(1); });
     timeline->setToolTip("Use , and . to step backward or forward one frame.");
     action("Set in   I", Qt::Key_I, [this]{ mark(true); });
     action("Set out   O", Qt::Key_O, [this]{ mark(false); });
