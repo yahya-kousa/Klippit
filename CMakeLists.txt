@@ -10,6 +10,7 @@ qt_add_executable(klippit
     src/ClipQueue.h src/ClipQueue.cpp
     src/Timeline.h src/Timeline.cpp
     src/ClipExporter.h src/ClipExporter.cpp
+    src/SaveFolders.h src/SaveFolders.cpp
 )
 target_link_libraries(klippit PRIVATE Qt6::Widgets Qt6::Multimedia Qt6::MultimediaWidgets)
 set_target_properties(klippit PROPERTIES WIN32_EXECUTABLE TRUE)

@@ -1,6 +1,7 @@
 #include "ReplayTray.h"
 #include "Editor.h"
 #include "ReplaySettings.h"
+#include "SaveFolders.h"
 #ifdef KLIPPIT_PACKAGED
 #include "AppUpdate.h"
 #endif
@@ -13,7 +14,6 @@
 #include <QJsonObject>
 #include <QMessageBox>
 #include <QSettings>
-#include <QStandardPaths>
 #include <QStyle>
 #include <QTimer>
 #include <QUuid>
@@ -51,6 +51,11 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
         showEditor();
         if (quitting || QApplication::activeModalWidget()) return;
         if (const auto shortcut = editReplaySettings(this->editor)) updateHotkey(*shortcut);
+    });
+    menu.addAction("Save folders…", this, [this] {
+        if (quitting || QApplication::activeModalWidget()) return;
+        showEditor();
+        editSaveFolders(editor);
     });
     hotkeyTimeout.setSingleShot(true);
     connect(&hotkeyTimeout, &QTimer::timeout, this, [this] {
@@ -390,10 +395,11 @@ void ReplayTray::start()
         reportFailure("klippit-record.exe must be next to klippit.exe.");
         return;
     }
-    const auto movies = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
-    const auto folder = QDir(movies.isEmpty() ? QDir::homePath() : movies).filePath("Klippit");
-    if (!QDir().mkpath(folder)) {
-        reportFailure("Could not create the clip folder " + folder);
+    const auto preferred = saveFolders().replays;
+    const auto folder = preferred.isEmpty() ? defaultReplayFolder() : preferred;
+    if (preferred.isEmpty() ? !QDir().mkpath(folder) : !QFileInfo(folder).isDir()) {
+        reportFailure(QString("The replay folder is unavailable. Choose another in Save folders.\n%1")
+                          .arg(QDir::toNativeSeparators(folder)));
         return;
     }
 
