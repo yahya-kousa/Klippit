@@ -31,6 +31,12 @@ The green flag marks your requested start and the orange flag marks your end. Th
 
 Frame stepping pauses playback. Klippit reads frame timestamps near the playhead and reuses them as you step. Press **I** or **O** to mark the selected frame's timestamp.
 
+## Choose where clips save
+
+Open **Save folders…** from the editor or Windows tray. Use **Browse…** to choose a folder for replay captures or trimmed exports. The replay folder takes effect the next time you start replay. The trim folder sets the starting location of the export dialog, where you can still pick a different destination for each export.
+
+**Use default** restores **Videos → Klippit** for replays and the source clip's folder for trims. Saved clips stay in their original locations.
+
 ## How lossless trimming works
 
 Klippit uses ffprobe to find video keyframes. If you mark a start between keyframes, preview and export begin at the preceding usable keyframe. The timeline readout shows both the requested start and the lossless start.
@@ -72,7 +78,7 @@ The editor and export workflow have been tested on CachyOS with a 1440p Overwatc
 
 ## Experimental Windows recorder
 
-Build both Windows targets into the same folder, then open `klippit.exe`. In the Windows system tray, right-click Klippit and select **Start Replay**. The menu shows when recording starts and when the buffer has footage. Press the save hotkey (**Ctrl+Shift+F9** by default), and open **Clips to Trim** from the tray when you want to edit. The tray defaults to desktop audio and 15 seconds of history. It saves MKVs in **Videos → Klippit**. Closing the editor leaves the tray and recorder running. Launching Klippit again opens the existing editor. **Stop Replay** finishes accepted saves, and **Quit Klippit** also closes the tray. Use **Quit Klippit** before rebuilding on Windows.
+Build both Windows targets into the same folder, then open `klippit.exe`. In the Windows system tray, right-click Klippit and select **Start Replay**. The menu shows when recording starts and when the buffer has footage. Press the save hotkey (**Ctrl+Shift+F9** by default), and open **Clips to Trim** from the tray when you want to edit. The tray defaults to desktop audio and 15 seconds of history. It saves MKVs in **Videos → Klippit** by default. Closing the editor leaves the tray and recorder running. Launching Klippit again opens the existing editor. **Stop Replay** finishes accepted saves, and **Quit Klippit** also closes the tray. Use **Quit Klippit** before rebuilding on Windows.
 
 Open **Replay Settings** from the tray to set the history length, save hotkey, and audio source. **Advanced** exposes target FPS and video bitrate. The save hotkey updates while replay is running. Other changes take effect the next time replay starts, including automatic startup. If Windows rejects a live hotkey change, Klippit keeps the previous shortcut. For a microphone option, choose an input from the dropdown. Click **Refresh** after connecting a device. A saved microphone stays selected if it is temporarily unavailable. If Windows rejects your shortcut, open **Recorder Error** from the tray for details.
 

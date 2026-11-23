@@ -1,5 +1,6 @@
 #include "Editor.h"
 #include "ClipQueue.h"
+#include "SaveFolders.h"
 #include "Timeline.h"
 #include <QtWidgets>
 #include <QVideoWidget>
@@ -263,7 +264,12 @@ void Editor::exportClip()
     exportStartUs = cut->startUs;
     exportDurationUs = cut->durationUs;
     QFileInfo input(source);
-    saveClip(input.dir().filePath(input.completeBaseName() + "-trim"), false);
+    const auto folder = saveFolders().trims;
+    const bool usePreferredFolder = !folder.isEmpty() && QFileInfo(folder).isDir();
+    if (!folder.isEmpty() && !usePreferredFolder)
+        status->setText("The preferred trim folder is unavailable. Choose a destination for this export.");
+    const QDir exportDir = usePreferredFolder ? QDir(folder) : input.dir();
+    saveClip(exportDir.filePath(input.completeBaseName() + "-trim"), false);
 }
 
 void Editor::saveClip(const QString &suggestedName, bool mkvOnly)
@@ -350,6 +356,10 @@ Editor::Editor()
     action("Set out   O", Qt::Key_O, [this]{ mark(false); });
     action("Preview   Space", Qt::Key_Space, [this]{ preview(); });
     action("Export   Enter", Qt::Key_Return, [this]{ exportClip(); });
+    auto *saveFoldersButton = new QPushButton("Save folders…");
+    saveFoldersButton->setFocusPolicy(Qt::NoFocus);
+    buttons->addWidget(saveFoldersButton);
+    connect(saveFoldersButton, &QPushButton::clicked, this, [this] { editSaveFolders(*this); });
     connect(&probe, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error){
         if (error == QProcess::FailedToStart) status->setText("Could not start ffprobe. Check PATH.");
     });
