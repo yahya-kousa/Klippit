@@ -1,5 +1,6 @@
 #include "ReplayTray.h"
 #include "Editor.h"
+#include "ReplayAppFolders.h"
 #include "ReplaySettings.h"
 #include "SaveFolders.h"
 #ifdef KLIPPIT_PACKAGED
@@ -104,7 +105,17 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
                 }
             }
             if (name == "clip_saved") {
-                const auto file = QFileInfo(event["path"].toString()).fileName();
+                const QFileInfo saved(event["path"].toString());
+                const auto app = saved.dir().dirName();
+                if (app.compare("Desktop", Qt::CaseInsensitive) != 0) {
+                    QSettings settings("Klippit", "Klippit");
+                    auto known = settings.value(clippedAppsKey).toStringList();
+                    if (!known.contains(app, Qt::CaseInsensitive)) {
+                        known.append(app);
+                        settings.setValue(clippedAppsKey, known);
+                    }
+                }
+                const auto file = saved.fileName();
                 const auto message = event["queued"].toBool() ? file + " added to Clips to Trim."
                                                               : file + " saved. Open it manually.";
                 tray.showMessage("Clip saved", message);

@@ -1,4 +1,6 @@
 #include "SaveFolders.h"
+#include "ReplayAppFolders.h"
+#include <QListWidget>
 
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -62,6 +64,28 @@ void editSaveFolders(QWidget &parent)
 #ifdef Q_OS_WIN
     auto *replayField = addFolder("Replay clips", QDir::toNativeSeparators(replays), defaultReplayFolder());
     form->addRow(new QLabel("Replay folder changes apply the next time you start replay.", &dialog));
+    const QSettings stored("Klippit", "Klippit");
+    const auto grouped = stored.value(desktopAppsKey).toStringList();
+    auto known = stored.value(clippedAppsKey).toStringList();
+    known.append(grouped);
+    // Discover clips saved by earlier versions, before app history was recorded.
+    const QDir root(replays.isEmpty() ? defaultReplayFolder() : replays);
+    for (const auto &name : root.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        QDir folder(root.filePath(name));
+        if (!folder.entryList({"Replay-*.mkv"}, QDir::Files).isEmpty()) known.append(name);
+    }
+    known.sort(Qt::CaseInsensitive);
+    auto *apps = new QListWidget;
+    QString last;
+    for (const auto &name : known) {
+        if (name.compare(last, Qt::CaseInsensitive) == 0 ||
+            name.compare("Desktop", Qt::CaseInsensitive) == 0) continue;
+        last = name;
+        auto *item = new QListWidgetItem(name, apps);
+        item->setCheckState(grouped.contains(name, Qt::CaseInsensitive) ? Qt::Checked : Qt::Unchecked);
+    }
+    form->addRow("Save future clips under Desktop", apps);
+    if (!apps->count()) form->addRow(new QLabel("Apps appear here after you save a replay.", &dialog));
 #endif
     auto *trimField = addFolder("Trimmed exports", QDir::toNativeSeparators(previous.trims),
                                 "Same folder as the source clip");
@@ -76,6 +100,14 @@ void editSaveFolders(QWidget &parent)
     replays = QDir::fromNativeSeparators(replayField->text());
 #endif
     QSettings settings("Klippit", "Klippit");
+#ifdef Q_OS_WIN
+    QStringList desktopApps;
+    for (int row = 0; row < apps->count(); ++row) {
+        const auto *item = apps->item(row);
+        if (item->checkState() == Qt::Checked) desktopApps.append(item->text());
+    }
+    settings.setValue(desktopAppsKey, desktopApps);
+#endif
     settings.setValue(settingsKey, QVariantMap{{"replays", replays},
         {"trims", QDir::fromNativeSeparators(trimField->text())}});
     settings.sync();

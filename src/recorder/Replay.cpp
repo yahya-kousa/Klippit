@@ -15,8 +15,9 @@
 #ifdef Q_OS_WIN
 #include <QAbstractNativeEventFilter>
 #include <windows.h>
-#include <QFileInfo>
-#include <QRegularExpression>
+#include "../ReplayAppFolders.h"
+#include <QSettings>
+#include <QDir>
 #include <conio.h>
 #include <io.h>
 #include <cstdio>
@@ -37,18 +38,8 @@ QString foregroundFolder()
     wchar_t path[32768];
     DWORD length = 32768;
     if (!QueryFullProcessImageNameW(process, 0, path, &length)) return "Desktop";
-    QString name = QFileInfo(QString::fromWCharArray(path, length)).completeBaseName();
-    if (name.compare("explorer", Qt::CaseInsensitive) == 0) return "Desktop";
-    // Restrict the executable stem to a single Windows-safe directory component.
-    static const QRegularExpression unsafe(R"([^\p{L}\p{N}_ -])",
-                                          QRegularExpression::UseUnicodePropertiesOption);
-    name.replace(unsafe, "_");
-    name = name.trimmed();
-    static const QRegularExpression reserved(QStringLiteral("^(CON|PRN|AUX|NUL|COM[0-9\u00b9\u00b2\u00b3]|LPT[0-9\u00b9\u00b2\u00b3])$"),
-                                              QRegularExpression::CaseInsensitiveOption);
-    if (name.isEmpty()) return "Desktop";
-    if (reserved.match(name).hasMatch()) name.prepend('_');
-    return name;
+    const QString executable = QDir::fromNativeSeparators(QString::fromWCharArray(path, length));
+    return replayAppFolder(executable, QSettings("Klippit", "Klippit").value(desktopAppsKey).toStringList());
 }
 
 bool registerSaveHotkey(int id, const ReplayHotkey &hotkey)
