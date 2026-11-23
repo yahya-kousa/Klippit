@@ -4,6 +4,7 @@
 #include "Timeline.h"
 #include <QtWidgets>
 #include <QVideoWidget>
+#include <QScopeGuard>
 #include <algorithm>
 #include <utility>
 #include "TrimRange.h"
@@ -21,7 +22,7 @@ qint64 Editor::playheadUs() const
 
 void Editor::clearFrameStep()
 {
-    if (pendingStep && status->text() == "Finding video frames…") status->clear();
+    if (pendingStep && status->text() == "Finding nearby frames…") status->clear();
     pendingStep = 0;
     steppedFrameUs.reset();
 }
@@ -51,6 +52,8 @@ void Editor::openFile(const QString &file)
         frameProbe.waitForFinished();
     }
     frameTimesUs.clear();
+    frameWindowCenterUs.reset();
+    mediaOriginUs = 0;
     player.stop();
     source = file;
     if (probe.state() != QProcess::NotRunning) {
@@ -59,6 +62,7 @@ void Editor::openFile(const QString &file)
     }
     if (probe.isOpen()) probe.readAllStandardOutput();
     keysUs.clear();
+    videoPacketTimesUs.clear();
     edited = previewing = false;
     startUs = endUs = 0;
     timeline->setRange(0, 0);
@@ -168,20 +172,41 @@ void Editor::stepFrame(int direction)
     if (source.isEmpty() || !player.isSeekable()) return;
     previewing = false;
     player.pause();
-    if (frameTimesUs.empty()) {
-        pendingStep = direction;
-        if (frameProbe.state() == QProcess::NotRunning) {
-            status->setText("Finding video frames…");
-            frameProbe.start("ffprobe", {"-v", "error", "-select_streams", "v:0", "-show_frames",
-                "-show_entries", "frame=best_effort_timestamp_time:format=start_time",
-                "-of", "compact=p=0:nk=0", source});
-        }
-        return;
+    const qint64 positionUs = playheadUs();
+    if (frameWindowCenterUs && (positionUs == *frameWindowCenterUs ||
+        (positionUs >= frameTimesUs.front() && positionUs <= frameTimesUs.back()))) {
+        if (seekAdjacentFrame(positionUs, direction)) return;
+        if (positionUs == *frameWindowCenterUs) return;
     }
+    pendingStep = direction;
+    status->setText("Finding nearby frames…");
+    if (probe.state() != QProcess::NotRunning || frameProbe.state() != QProcess::NotRunning) return;
 
-    const auto after = std::upper_bound(frameTimesUs.begin(), frameTimesUs.end(), playheadUs());
-    if (direction < 0 && after - frameTimesUs.begin() < 2) return;
-    if (direction > 0 && after == frameTimesUs.end()) return;
+    frameProbeCenterUs = positionUs;
+    auto fromUs = positionUs - 250000;
+    auto untilUs = positionUs + 350000;
+    // Packet timestamps extend the window across sparse or uneven video.
+    // The actual step still uses timestamps from decoded frames.
+    const auto packet = std::upper_bound(videoPacketTimesUs.begin(), videoPacketTimesUs.end(), positionUs);
+    if (packet - videoPacketTimesUs.begin() >= 2)
+        fromUs = std::min(fromUs, *std::prev(packet, 2) - 20000);
+    if (packet != videoPacketTimesUs.end())
+        untilUs = std::max(untilUs, *packet + 150000);
+    const auto seconds = [this](qint64 relativeUs) {
+        return QString::number((relativeUs + mediaOriginUs) / 1000000.0, 'f', 6);
+    };
+    // Omit the start seek at the beginning so ffprobe reads from the first packet.
+    const auto interval = (fromUs > 0 ? seconds(fromUs) : QString()) + '%' + seconds(untilUs);
+    frameProbe.start("ffprobe", {"-v", "error", "-select_streams", "v:0", "-read_intervals", interval,
+        "-show_frames", "-show_entries", "frame=best_effort_timestamp_time:format=start_time",
+        "-of", "compact=p=0:nk=0", source});
+}
+
+bool Editor::seekAdjacentFrame(qint64 positionUs, int direction)
+{
+    const auto after = std::upper_bound(frameTimesUs.begin(), frameTimesUs.end(), positionUs);
+    if (direction < 0 && after - frameTimesUs.begin() < 2) return false;
+    if (direction > 0 && after == frameTimesUs.end()) return false;
     const auto frame = direction > 0 ? after : std::prev(after, 2);
     steppedFrameUs = *frame;
 
@@ -194,6 +219,7 @@ void Editor::stepFrame(int direction)
     const QSignalBlocker block(timeline);
     timeline->setValue(int(*steppedFrameUs / 1000));
     refresh();
+    return true;
 }
 
 void Editor::mark(bool first)
@@ -338,20 +364,31 @@ Editor::Editor()
         if (error == QProcess::FailedToStart) status->setText("Could not start ffprobe. Check PATH.");
     });
     connect(&probe, &QProcess::finished, this, [this](int code, QProcess::ExitStatus exit){
+        const auto resumeStep = qScopeGuard([this] {
+            if (pendingStep && frameProbe.state() == QProcess::NotRunning)
+                stepFrame(std::exchange(pendingStep, 0));
+        });
         auto doc = QJsonDocument::fromJson(probe.readAllStandardOutput()).object();
         if (code != 0 || exit != QProcess::NormalExit) {
             status->setText("Keyframe indexing failed. " + QString::fromUtf8(probe.readAllStandardError()).right(400));
             return;
         }
         auto origin = doc["format"].toObject()["start_time"].toString().toDouble();
+        mediaOriginUs = qRound64(origin * 1000000);
         for (auto value : doc["packets"].toArray()) {
             auto packet = value.toObject();
             auto flags = packet["flags"].toString();
-            if (!flags.contains('K') || flags.contains('D')) continue;
+            if (flags.contains('D')) continue;
             bool ok = false;
             auto seconds = packet["pts_time"].toString().toDouble(&ok);
-            if (ok && seconds >= origin) keysUs.push_back(qRound64((seconds - origin) * 1000000));
+            if (!ok || seconds < origin) continue;
+            const auto timeUs = qRound64(seconds * 1000000) - mediaOriginUs;
+            videoPacketTimesUs.push_back(timeUs);
+            if (flags.contains('K')) keysUs.push_back(timeUs);
         }
+        std::sort(videoPacketTimesUs.begin(), videoPacketTimesUs.end());
+        videoPacketTimesUs.erase(std::unique(videoPacketTimesUs.begin(), videoPacketTimesUs.end()),
+                                 videoPacketTimesUs.end());
         std::sort(keysUs.begin(), keysUs.end());
         if (!keysUs.empty() && !edited) startUs = keysUs.front();
         if (frameProbe.state() == QProcess::NotRunning)
@@ -369,7 +406,8 @@ Editor::Editor()
             if (direction) status->setText("Could not index video frames.");
             return;
         }
-        qint64 originUs = 0;
+        qint64 originUs = mediaOriginUs;
+        frameTimesUs.clear();
         while (frameProbe.canReadLine()) {
             const QByteArray line = frameProbe.readLine();
             const auto delimiter = line.indexOf('|');
@@ -387,12 +425,13 @@ Editor::Editor()
         std::sort(frameTimesUs.begin(), frameTimesUs.end());
         frameTimesUs.erase(frameTimesUs.begin(), std::lower_bound(frameTimesUs.begin(), frameTimesUs.end(), 0));
         frameTimesUs.erase(std::unique(frameTimesUs.begin(), frameTimesUs.end()), frameTimesUs.end());
-        if (frameTimesUs.empty()) {
-            if (direction) status->setText("No usable video timestamps found for frame stepping.");
-        } else if (direction) {
-            status->clear();
-            stepFrame(direction);
-        }
+        if (frameTimesUs.empty()) frameWindowCenterUs.reset();
+        else frameWindowCenterUs = frameProbeCenterUs;
+        if (!direction) return;
+        status->clear();
+        if (qAbs(playheadUs() - frameProbeCenterUs) > 500000) stepFrame(direction);
+        else if (frameTimesUs.empty()) status->setText("No video frames found near the playhead.");
+        else seekAdjacentFrame(playheadUs(), direction);
     });
     player.setVideoOutput(video);
     player.setAudioOutput(&audio);
