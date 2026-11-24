@@ -27,7 +27,7 @@ constexpr int saveHotkeyId = 1;
 constexpr int stopHotkeyId = 2;
 constexpr int alternateSaveHotkeyId = 3;
 
-QString foregroundFolder()
+QString foregroundApp()
 {
     const HWND window = GetForegroundWindow();
     DWORD pid = 0;
@@ -39,7 +39,7 @@ QString foregroundFolder()
     DWORD length = 32768;
     if (!QueryFullProcessImageNameW(process, 0, path, &length)) return "Desktop";
     const QString executable = QDir::fromNativeSeparators(QString::fromWCharArray(path, length));
-    return replayAppFolder(executable, QSettings("Klippit", "Klippit").value(desktopAppsKey).toStringList());
+    return replayAppName(executable);
 }
 
 bool registerSaveHotkey(int id, const ReplayHotkey &hotkey)
@@ -203,8 +203,16 @@ int recordReplay(QStringList args, const QString &firstPath, bool desktop, int h
         bool nativeEventFilter(const QByteArray &, void *message, qintptr *) override {
             auto *msg = static_cast<MSG *>(message);
             if (msg->message != WM_HOTKEY) return false;
-            if (msg->wParam == static_cast<WPARAM>(activeHotkeyId) && !stopping)
-                replay.request(groupByApp ? foregroundFolder() : QString());
+            if (msg->wParam == static_cast<WPARAM>(activeHotkeyId) && !stopping) {
+                if (groupByApp) {
+                    const auto app = foregroundApp();
+                    const QSettings settings("Klippit", "Klippit");
+                    replay.request(replayAppFolder(app, settings.value(desktopAppsKey).toStringList(),
+                                                  settings.value(appFolderNamesKey).toMap()), app);
+                } else {
+                    replay.request();
+                }
+            }
             if (msg->wParam == stopHotkeyId && !stopping) {
                 stopping = true;
                 qInfo("Stop hotkey received.");

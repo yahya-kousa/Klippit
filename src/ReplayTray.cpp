@@ -101,8 +101,8 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
             }
             if (name == "clip_saved") {
                 const QFileInfo saved(event["path"].toString());
-                const auto app = saved.dir().dirName();
-                if (app.compare("Desktop", Qt::CaseInsensitive) != 0) {
+                const auto app = event.value("app").toString(saved.dir().dirName());
+                if (!app.isEmpty() && app.compare("Desktop", Qt::CaseInsensitive) != 0) {
                     QSettings settings("Klippit", "Klippit");
                     auto known = settings.value(clippedAppsKey).toStringList();
                     if (!known.contains(app, Qt::CaseInsensitive)) {
