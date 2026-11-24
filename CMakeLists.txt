@@ -7,6 +7,7 @@ qt_standard_project_setup()
 qt_add_executable(klippit
     src/main.cpp
     src/Editor.h src/Editor.cpp
+    src/StepFrames.h src/StepFrames.cpp
     src/ClipQueue.h src/ClipQueue.cpp
     src/Timeline.h src/Timeline.cpp
     src/ClipExporter.h src/ClipExporter.cpp
@@ -25,6 +26,11 @@ if(BUILD_TESTING)
     add_test(NAME lossless_trim COMMAND Python3::Interpreter
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_trim.py" $<TARGET_FILE:export_trim_test>)
     set_tests_properties(lossless_trim PROPERTIES TIMEOUT 90)
+    add_executable(step_frames_test tests/step_frames.cpp src/StepFrames.cpp src/StepFrames.h)
+    target_include_directories(step_frames_test PRIVATE src)
+    target_link_libraries(step_frames_test PRIVATE Qt6::Gui)
+    add_test(NAME step_frames COMMAND step_frames_test)
+    set_tests_properties(step_frames PROPERTIES TIMEOUT 30)
     add_executable(capture_start_test tests/capture_start.cpp src/recorder/Loopback.cpp)
     target_include_directories(capture_start_test PRIVATE src/recorder)
     target_link_libraries(capture_start_test PRIVATE Qt6::Core)

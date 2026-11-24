@@ -91,7 +91,7 @@ jobs:
           Copy-Item "$env:FFMPEG_ROOT/README.txt" out/app/notices/FFmpeg-build.txt
           Invoke-WebRequest "https://raw.githubusercontent.com/velopack/velopack/$env:VELO_VERSION/LICENSE" -OutFile out/app/notices/Velopack-LICENSE.txt
           Copy-Item README.md out/app
-          foreach ($file in 'velopack_libc.dll','Qt6Core.dll','platforms/qwindows.dll','multimedia/ffmpegmediaplugin.dll','vcruntime140.dll') {
+          foreach ($file in 'velopack_libc.dll','Qt6Core.dll','platforms/qwindows.dll','imageformats/qjpeg.dll','multimedia/ffmpegmediaplugin.dll','vcruntime140.dll') {
             if (!(Test-Path "out/app/$file")) { throw "Deployment is missing $file" }
           }
 

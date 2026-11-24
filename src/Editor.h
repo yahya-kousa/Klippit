@@ -1,13 +1,17 @@
 #pragma once
 #include "ClipExporter.h"
+#include "StepFrames.h"
 #include "ClipQueue.h"
 #include <QWidget>
 #include <QMediaPlayer>
 #include <QAudioOutput>
 #include <QProcess>
+#include <QTimer>
+#include <QElapsedTimer>
 #include <optional>
 #include <vector>
 
+class FrameCanvas;
 class TimelineSlider;
 class ClipMarkers;
 class QLabel;
@@ -27,6 +31,26 @@ class Editor : public QWidget {
     std::optional<qint64> frameWindowCenterUs;
     qint64 frameProbeCenterUs = 0, mediaOriginUs = 0;
     int pendingStep = 0;
+    int heldDirection = 0;
+    bool forwardPlaying = false, repeatingStep = false;
+    StepFrames stepFrames;
+    QStackedWidget *previewStack;
+    FrameCanvas *frameCanvas;
+    QSize stepPreviewSize() const;
+    QTimer previewResizeTimer;
+    std::optional<qint64> requestedFrame;
+    qint64 batchTargetUs = 0;
+    void leaveCachedPreview();
+    const std::vector<qint64> &stepIndex(qint64 position) const;
+    void loadFrameBatch(qint64 target, int direction);
+    void displayStep(qint64 target, const QImage &image);
+    int requestedDirection = 0;
+    QTimer reverseStepTimer;
+    QElapsedTimer reverseStepTime;
+
+    void advanceReverseHold();
+    void finishHold();
+    void probeFrames(qint64 centerUs);
 
     TimelineSlider *timeline;
     ClipMarkers *markers;
@@ -74,6 +98,10 @@ class Editor : public QWidget {
     void saveClip(const QString &suggestedName, bool mkvOnly);
 
 protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
+    void keyReleaseEvent(QKeyEvent *event) override;
+    bool event(QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 
 public:
