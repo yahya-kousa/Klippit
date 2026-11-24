@@ -29,7 +29,7 @@ Klippit is open source under the [GNU General Public License version 3](LICENSE)
 
 The green flag marks your requested start and the orange flag marks your end. The playhead shows your current position. Preview plays the default audio track. Export copies the first video track and all audio tracks. MP4 is selected by default for sharing. Choose Matroska (MKV) in the export dialog, or use **Save as MKV** if FFmpeg reports that MP4 cannot carry a track.
 
-Frame stepping pauses playback. Klippit reads frame timestamps near the playhead and reuses them as you step. Press **I** or **O** to mark the selected frame's timestamp.
+Tap either key to pause and step one frame. Hold period to play forward until release, or hold comma to step backward repeatedly. Press **I** or **O** to mark the selected frame's timestamp.
 
 ## Choose where clips save
 

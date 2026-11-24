@@ -5,6 +5,7 @@
 #include <QMediaPlayer>
 #include <QAudioOutput>
 #include <QProcess>
+#include <QElapsedTimer>
 #include <optional>
 #include <vector>
 
@@ -27,6 +28,11 @@ class Editor : public QWidget {
     std::optional<qint64> frameWindowCenterUs;
     qint64 frameProbeCenterUs = 0, mediaOriginUs = 0;
     int pendingStep = 0;
+    int heldDirection = 0;
+    bool forwardPlaying = false, repeatingStep = false;
+    QElapsedTimer stepSeek;
+    void finishHold();
+    void probeFrames(qint64 centerUs);
 
     TimelineSlider *timeline;
     ClipMarkers *markers;
@@ -74,6 +80,9 @@ class Editor : public QWidget {
     void saveClip(const QString &suggestedName, bool mkvOnly);
 
 protected:
+    void keyPressEvent(QKeyEvent *event) override;
+    void keyReleaseEvent(QKeyEvent *event) override;
+    bool event(QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 
 public:
