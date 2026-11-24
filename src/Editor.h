@@ -5,6 +5,7 @@
 #include <QWidget>
 #include <QKeySequence>
 #include <array>
+#include <functional>
 #include <QMediaPlayer>
 #include <QAudioOutput>
 #include <QProcess>
@@ -17,7 +18,6 @@ class FrameCanvas;
 class TimelineSlider;
 class ClipMarkers;
 class QLabel;
-class QMenu;
 class QPushButton;
 class QShortcut;
 class QStackedWidget;
@@ -51,14 +51,13 @@ class Editor : public QWidget {
     QTimer reverseStepTimer;
     QElapsedTimer reverseStepTime;
 
-    enum Shortcut { PlayPause, StepBack, StepForward, MarkIn, MarkOut, ShortcutCount };
+    enum Shortcut { PlayPause, StepBack, StepForward, MarkIn, MarkOut, Preview, Export, Open, ShortcutCount };
     using Shortcuts = std::array<QKeySequence, ShortcutCount>;
     Shortcuts shortcuts;
     std::array<QShortcut *, ShortcutCount> shortcutActions{};
     std::array<QPushButton *, ShortcutCount> shortcutButtons{};
     static Shortcuts defaultShortcuts();
     static QString shortcutError(const Shortcuts &keys);
-    void editShortcuts();
     void applyShortcuts();
     int stepDirection(const QKeyEvent *event) const;
     void handleStepPress(QKeyEvent *event);
@@ -73,7 +72,8 @@ class Editor : public QWidget {
     QLabel *status;
     QPushButton *markDoneButton;
     QPushButton *trashButton;
-    QMenu *settingsMenu;
+    QPushButton *settingsButton;
+    std::function<void(const QString &)> replayHotkeyChanged;
     QStackedWidget *pages;
     QWidget *homePage;
     QWidget *editPage;
@@ -118,7 +118,9 @@ protected:
 
 public:
     Editor();
-    void addSettingsAction(QAction *action);
+    void showSettings();
+    void setReplayHotkeyHandler(std::function<void(const QString &)> handler);
+    void setSettingsEnabled(bool enabled);
     void setReplayActions(QAction *state, QAction *start, QAction *stop);
     void showClipQueue();
     void showAndActivate();

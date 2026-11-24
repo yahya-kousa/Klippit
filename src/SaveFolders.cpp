@@ -2,8 +2,6 @@
 #include "ReplayAppFolders.h"
 #include <QListWidget>
 
-#include <QDialog>
-#include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -11,7 +9,6 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QMessageBox>
 #include <QPushButton>
 #include <QSettings>
 #include <QStandardPaths>
@@ -33,27 +30,25 @@ QString defaultReplayFolder()
     return QDir(movies.isEmpty() ? QDir::homePath() : movies).filePath("Klippit");
 }
 
-void editSaveFolders(QWidget &parent)
+std::function<void(QSettings &)> createSaveFoldersPage(QWidget &page)
 {
     const auto previous = saveFolders();
-    QDialog dialog(&parent);
-    dialog.setWindowTitle("Save folders");
-    auto *form = new QFormLayout(&dialog);
+    auto *form = new QFormLayout(&page);
     const auto addFolder = [&](const QString &label, const QString &path, const QString &fallback) {
-        auto *field = new QLineEdit(path, &dialog);
+        auto *field = new QLineEdit(path, &page);
         field->setReadOnly(true);
         field->setPlaceholderText(fallback);
         auto *row = new QHBoxLayout;
-        auto *browse = new QPushButton("Browse…", &dialog);
-        auto *reset = new QPushButton("Use default", &dialog);
+        auto *browse = new QPushButton("Browse…", &page);
+        auto *reset = new QPushButton("Use default", &page);
         row->addWidget(field, 1);
         row->addWidget(browse);
         row->addWidget(reset);
         form->addRow(label, row);
-        QObject::connect(browse, &QPushButton::clicked, &dialog, [&dialog, field, label, fallback] {
+        QObject::connect(browse, &QPushButton::clicked, &page, [&page, field, label, fallback] {
             auto initial = field->text().isEmpty() ? fallback : field->text();
             if (!QFileInfo(initial).isDir()) initial = QDir::homePath();
-            const auto selected = QFileDialog::getExistingDirectory(&dialog, "Choose " + label, initial);
+            const auto selected = QFileDialog::getExistingDirectory(&page, "Choose " + label, initial);
             if (!selected.isEmpty()) field->setText(QDir::toNativeSeparators(selected));
         });
         QObject::connect(reset, &QPushButton::clicked, field, &QLineEdit::clear);
@@ -63,7 +58,7 @@ void editSaveFolders(QWidget &parent)
     QString replays = previous.replays;
 #ifdef Q_OS_WIN
     auto *replayField = addFolder("Replay clips", QDir::toNativeSeparators(replays), defaultReplayFolder());
-    form->addRow(new QLabel("Replay folder changes apply the next time you start replay.", &dialog));
+    form->addRow(new QLabel("Replay folder changes apply the next time you start replay.", &page));
     const QSettings stored("Klippit", "Klippit");
     const auto grouped = stored.value(desktopAppsKey).toStringList();
     auto known = stored.value(clippedAppsKey).toStringList();
@@ -85,32 +80,23 @@ void editSaveFolders(QWidget &parent)
         item->setCheckState(grouped.contains(name, Qt::CaseInsensitive) ? Qt::Checked : Qt::Unchecked);
     }
     form->addRow("Save future clips under Desktop", apps);
-    if (!apps->count()) form->addRow(new QLabel("Apps appear here after you save a replay.", &dialog));
+    if (!apps->count()) form->addRow(new QLabel("Apps appear here after you save a replay.", &page));
 #endif
     auto *trimField = addFolder("Trimmed exports", QDir::toNativeSeparators(previous.trims),
                                 "Same folder as the source clip");
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
-    form->addRow(buttons);
-    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    dialog.resize(680, dialog.sizeHint().height());
-    if (dialog.exec() != QDialog::Accepted) return;
-
+    return [=](QSettings &settings) {
 #ifdef Q_OS_WIN
-    replays = QDir::fromNativeSeparators(replayField->text());
+        const auto replayPath = QDir::fromNativeSeparators(replayField->text());
+        QStringList desktopApps;
+        for (int row = 0; row < apps->count(); ++row) {
+            const auto *item = apps->item(row);
+            if (item->checkState() == Qt::Checked) desktopApps.append(item->text());
+        }
+        settings.setValue(desktopAppsKey, desktopApps);
+#else
+        const auto replayPath = replays;
 #endif
-    QSettings settings("Klippit", "Klippit");
-#ifdef Q_OS_WIN
-    QStringList desktopApps;
-    for (int row = 0; row < apps->count(); ++row) {
-        const auto *item = apps->item(row);
-        if (item->checkState() == Qt::Checked) desktopApps.append(item->text());
-    }
-    settings.setValue(desktopAppsKey, desktopApps);
-#endif
-    settings.setValue(settingsKey, QVariantMap{{"replays", replays},
-        {"trims", QDir::fromNativeSeparators(trimField->text())}});
-    settings.sync();
-    if (settings.status() != QSettings::NoError)
-        QMessageBox::warning(&parent, "Save folders", "Could not save your folder preferences.");
+        settings.setValue(settingsKey, QVariantMap{{"replays", replayPath},
+            {"trims", QDir::fromNativeSeparators(trimField->text())}});
+    };
 }

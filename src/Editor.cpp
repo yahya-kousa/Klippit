@@ -1,5 +1,8 @@
 #include "Editor.h"
 #include "SaveFolders.h"
+#ifdef Q_OS_WIN
+#include "ReplaySettings.h"
+#endif
 #include "Timeline.h"
 #include <QtWidgets>
 #include <QVideoWidget>
@@ -618,9 +621,14 @@ void Editor::showAndActivate()
     window->activateWindow();
 }
 
-void Editor::addSettingsAction(QAction *action)
+void Editor::setReplayHotkeyHandler(std::function<void(const QString &)> handler)
 {
-    settingsMenu->addAction(action);
+    replayHotkeyChanged = std::move(handler);
+}
+
+void Editor::setSettingsEnabled(bool enabled)
+{
+    settingsButton->setEnabled(enabled);
 }
 
 void Editor::setReplayActions(QAction *state, QAction *start, QAction *stop)
@@ -689,16 +697,14 @@ void Editor::refreshHome()
 
 Editor::Shortcuts Editor::defaultShortcuts()
 {
-    return {Qt::Key_K, Qt::Key_Comma, Qt::Key_Period, Qt::Key_I, Qt::Key_O};
+    return {Qt::Key_K, Qt::Key_Comma, Qt::Key_Period, Qt::Key_I, Qt::Key_O,
+            Qt::Key_Space, Qt::Key_Return, QKeySequence(QKeySequence::Open)};
 }
 
 QString Editor::shortcutError(const Shortcuts &keys)
 {
-    auto reserved = QKeySequence::keyBindings(QKeySequence::Open);
-    reserved << QKeySequence(Qt::Key_Space) << QKeySequence(Qt::Key_Return)
-             << QKeySequence(Qt::Key_Enter) << QKeySequence(Qt::Key_Escape)
-             << QKeySequence(Qt::Key_Tab) << QKeySequence(Qt::SHIFT | Qt::Key_Tab)
-             << QKeySequence(Qt::Key_Backtab);
+    const QList<QKeySequence> reserved{Qt::Key_Escape, Qt::Key_Tab,
+                                       Qt::SHIFT | Qt::Key_Tab, Qt::Key_Backtab};
     for (auto it = keys.begin(); it != keys.end(); ++it) {
         if (it->count() != 1 || (*it)[0].key() == Qt::Key_unknown)
             return tr("Choose one key or key combination for each action.");
@@ -713,7 +719,7 @@ QString Editor::shortcutError(const Shortcuts &keys)
 void Editor::applyShortcuts()
 {
     const auto label = [this](Shortcut action) { return shortcuts[action].toString(QKeySequence::NativeText); };
-    for (auto action : {PlayPause, MarkIn, MarkOut}) {
+    for (auto action : {PlayPause, MarkIn, MarkOut, Preview, Export, Open}) {
         auto *button = shortcutButtons[action];
         button->setText(button->property("actionLabel").toString() + "   " + label(action));
         shortcutActions[action]->setKey(shortcuts[action]);
@@ -722,14 +728,33 @@ void Editor::applyShortcuts()
                          .arg(label(StepBack), label(StepForward)));
 }
 
-void Editor::editShortcuts()
+void Editor::showSettings()
 {
+    if (!settingsButton->isEnabled() || QApplication::activeModalWidget()) return;
     finishHold();
     QDialog dialog(this);
-    dialog.setWindowTitle(tr("Editor shortcuts"));
-    auto *form = new QFormLayout(&dialog);
+    dialog.setWindowTitle(tr("Settings"));
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *tabs = new QTabWidget;
+    layout->addWidget(tabs);
+#ifdef Q_OS_WIN
+    SaveReplaySettings saveReplay;
+    QWidget *replayPage = nullptr;
+    if (replayHotkeyChanged) {
+        replayPage = new QWidget;
+        tabs->addTab(replayPage, tr("Replay"));
+        saveReplay = createReplaySettingsPage(*replayPage);
+    }
+#endif
+    auto *folders = new QWidget;
+    tabs->addTab(folders, tr("Save folders"));
+    const auto saveFoldersPage = createSaveFoldersPage(*folders);
+
+    auto *shortcutPage = new QWidget;
+    tabs->addTab(shortcutPage, tr("Editor shortcuts"));
+    auto *form = new QFormLayout(shortcutPage);
     const std::array labels{tr("Play / pause"), tr("Step backward"), tr("Step forward"),
-                            tr("Set in"), tr("Set out")};
+                            tr("Set in"), tr("Set out"), tr("Preview"), tr("Export"), tr("Open file")};
     std::array<QKeySequenceEdit *, ShortcutCount> fields;
     for (int i = 0; i < ShortcutCount; ++i) {
         fields[i] = new QKeySequenceEdit(shortcuts[i], &dialog);
@@ -738,16 +763,18 @@ void Editor::editShortcuts()
     }
     auto *message = new QLabel;
     message->setWordWrap(true);
-    form->addRow(message);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel |
-                                        QDialogButtonBox::RestoreDefaults);
-    form->addRow(buttons);
+    layout->addWidget(message);
+    auto *restoreDefaults = new QPushButton(tr("Restore shortcut defaults"));
+    form->addRow(restoreDefaults);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
+    layout->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    connect(buttons->button(QDialogButtonBox::RestoreDefaults), &QPushButton::clicked, &dialog, [&] {
+    connect(restoreDefaults, &QPushButton::clicked, &dialog, [&] {
         const auto defaults = defaultShortcuts();
         for (int i = 0; i < ShortcutCount; ++i) fields[i]->setKeySequence(defaults[i]);
         message->clear();
     });
+    QString newHotkey;
     connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
         Shortcuts chosen;
         QStringList stored;
@@ -757,21 +784,36 @@ void Editor::editShortcuts()
         }
         const auto error = shortcutError(chosen);
         if (!error.isEmpty()) {
+            tabs->setCurrentWidget(shortcutPage);
             message->setText(error);
             return;
         }
         QSettings settings("Klippit", "Klippit");
+#ifdef Q_OS_WIN
+        if (saveReplay) {
+            const QList<QKeySequence> editorKeys(chosen.begin(), chosen.end());
+            const auto replayError = saveReplay(settings, editorKeys, newHotkey);
+            if (!replayError.isEmpty()) {
+                tabs->setCurrentWidget(replayPage);
+                message->setText(replayError);
+                return;
+            }
+        }
+#endif
+        saveFoldersPage(settings);
         settings.setValue("editor/shortcuts", stored);
         settings.sync();
         if (settings.status() != QSettings::NoError) {
-            message->setText(tr("Could not save editor shortcuts."));
+            message->setText(tr("Could not save settings."));
             return;
         }
         shortcuts = chosen;
         applyShortcuts();
         dialog.accept();
     });
-    dialog.exec();
+    dialog.resize(680, dialog.sizeHint().height());
+    if (dialog.exec() == QDialog::Accepted && !newHotkey.isEmpty() && replayHotkeyChanged)
+        replayHotkeyChanged(newHotkey);
 }
 
 Editor::Editor()
@@ -782,7 +824,7 @@ Editor::Editor()
       status(new QLabel),
       markDoneButton(new QPushButton("Mark done")),
       trashButton(new QPushButton("Trash original…")),
-      settingsMenu(new QMenu(this)),
+      settingsButton(new QPushButton(tr("Settings…"))),
       pages(new QStackedWidget(this)),
       homePage(new QWidget),
       editPage(new QWidget)
@@ -794,11 +836,8 @@ Editor::Editor()
     auto *homeButton = new QPushButton("Back to Home");
     navigation->addWidget(homeButton);
     navigation->addStretch();
-    auto *settingsButton = new QPushButton("Settings");
-    settingsButton->setMenu(settingsMenu);
     navigation->addWidget(settingsButton);
-    settingsMenu->addAction("Save folders…", this, [this] { editSaveFolders(*this); });
-    settingsMenu->addAction(tr("Editor shortcuts…"), this, &Editor::editShortcuts);
+    connect(settingsButton, &QPushButton::clicked, this, &Editor::showSettings);
     windowLayout->addLayout(navigation);
     windowLayout->addWidget(pages, 1);
     setupHome();
@@ -819,7 +858,6 @@ Editor::Editor()
         refreshHome();
         pages->setCurrentWidget(homePage);
     });
-    connect(new QShortcut(QKeySequence::Open, this), &QShortcut::activated, this, &Editor::open);
 
     auto *layout = new QVBoxLayout(editPage);
     auto *video = new QVideoWidget;
@@ -858,47 +896,41 @@ Editor::Editor()
     layout->addLayout(buttons);
     layout->addWidget(status);
     status->setWordWrap(true);
-    auto action = [this, buttons](QString label, QKeySequence key, auto fn,
-                                  Shortcut binding = ShortcutCount) {
+    auto action = [this, buttons](QString label, Shortcut binding, auto fn) {
         auto *button = new QPushButton(label);
         button->setFocusPolicy(Qt::NoFocus);
         buttons->addWidget(button);
         connect(button, &QPushButton::clicked, this, fn);
-        auto *shortcut = new QShortcut(key, editPage);
+        auto *shortcut = new QShortcut(binding == Open ? this : editPage);
         connect(shortcut, &QShortcut::activated, this, fn);
-        if (binding != ShortcutCount) {
-            button->setProperty("actionLabel", label);
-            shortcutButtons[binding] = button;
-            shortcutActions[binding] = shortcut;
-        }
+        button->setProperty("actionLabel", label);
+        shortcutButtons[binding] = button;
+        shortcutActions[binding] = shortcut;
     };
-    auto *openButton = new QPushButton("Open   Ctrl+O");
-    openButton->setFocusPolicy(Qt::NoFocus);
-    buttons->addWidget(openButton);
-    connect(openButton, &QPushButton::clicked, this, &Editor::open);
+    action(tr("Open"), Open, &Editor::open);
     auto *queueButton = new QPushButton("Clips to Trim");
     queueButton->setFocusPolicy(Qt::NoFocus);
     buttons->addWidget(queueButton);
     connect(queueButton, &QPushButton::clicked, this, [this]{ showClipQueue(); });
-    action(tr("Play / pause"), {}, [this]{
+    action(tr("Play / pause"), PlayPause, [this]{
         previewing = false;
         if (player.playbackState() == QMediaPlayer::PlayingState) player.pause();
         else { clearFrameStep(); player.play(); refresh(); }
-    }, PlayPause);
-    action(tr("Set in"), {}, [this]{ mark(true); }, MarkIn);
-    action(tr("Set out"), {}, [this]{ mark(false); }, MarkOut);
+    });
+    action(tr("Set in"), MarkIn, [this]{ mark(true); });
+    action(tr("Set out"), MarkOut, [this]{ mark(false); });
+    action(tr("Preview"), Preview, [this]{ preview(); });
+    action(tr("Export"), Export, [this]{ exportClip(); });
     shortcuts = defaultShortcuts();
     const auto stored = QSettings("Klippit", "Klippit").value("editor/shortcuts").toStringList();
-    if (stored.size() == ShortcutCount) {
-        Shortcuts saved;
-        for (int i = 0; i < ShortcutCount; ++i)
+    if (stored.size() == ShortcutCount || stored.size() == Preview) {
+        auto saved = shortcuts;
+        for (int i = 0; i < stored.size(); ++i)
             saved[i] = QKeySequence::fromString(stored[i], QKeySequence::PortableText);
         if (shortcutError(saved).isEmpty()) shortcuts = saved;
     }
     applyShortcuts();
     qApp->installEventFilter(this);
-    action("Preview   Space", Qt::Key_Space, [this]{ preview(); });
-    action("Export   Enter", Qt::Key_Return, [this]{ exportClip(); });
     connect(&probe, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error){
         if (error == QProcess::FailedToStart) status->setText("Could not start ffprobe. Check PATH.");
     });

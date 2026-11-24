@@ -1,10 +1,13 @@
 #pragma once
 
 #include <QStringList>
-#include <optional>
+#include <functional>
+#include <QKeySequence>
 
 class QWidget;
+class QSettings;
 
 QStringList replaySettingsArguments();
-std::optional<QString> editReplaySettings(QWidget &parent);
+using SaveReplaySettings = std::function<QString(QSettings &, const QList<QKeySequence> &, QString &)>;
+SaveReplaySettings createReplaySettingsPage(QWidget &page);
 bool storeReplayHotkey(const QString &shortcut);
