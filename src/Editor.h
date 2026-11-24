@@ -7,6 +7,7 @@
 #include <QAudioOutput>
 #include <QProcess>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <optional>
 #include <vector>
 
@@ -35,6 +36,8 @@ class Editor : public QWidget {
     StepFrames stepFrames;
     QStackedWidget *previewStack;
     FrameCanvas *frameCanvas;
+    QSize stepPreviewSize() const;
+    QTimer previewResizeTimer;
     std::optional<qint64> requestedFrame;
     qint64 batchTargetUs = 0;
     void leaveCachedPreview();
@@ -43,6 +46,7 @@ class Editor : public QWidget {
     void displayStep(qint64 target, const QImage &image);
     int requestedDirection = 0;
     QTimer reverseStepTimer;
+    QElapsedTimer reverseStepTime;
 
     void advanceReverseHold();
     void finishHold();
@@ -94,6 +98,7 @@ class Editor : public QWidget {
     void saveClip(const QString &suggestedName, bool mkvOnly);
 
 protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
     bool event(QEvent *event) override;
