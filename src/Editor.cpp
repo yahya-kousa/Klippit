@@ -673,14 +673,16 @@ void Editor::setupHome()
 void Editor::refreshHome()
 {
     const auto pending = ClipQueue().entries(false);
-    const auto unseen = std::count_if(pending.begin(), pending.end(),
-                                      [](const ClipQueue::Entry &entry) { return entry.unseen; });
-    QString label = tr("Clips to Trim (%1)").arg(pending.size());
-    if (unseen) label += tr("  ·  %1 new").arg(unseen);
-    homeQueue->setText(label);
+    const bool hasNewClips = std::any_of(pending.begin(), pending.end(),
+                                         [](const ClipQueue::Entry &entry) { return entry.unseen; });
+    homeQueue->setText(tr("Clips to Trim (%1)").arg(pending.size()));
+    const auto description = hasNewClips ? tr("New clips are ready to trim.") : QString();
+    homeQueue->setToolTip(description);
+    homeQueue->setAccessibleDescription(description);
     auto font = homeQueue->font();
-    font.setBold(unseen > 0);
+    font.setBold(hasNewClips);
     homeQueue->setFont(font);
+    homeQueue->setStyleSheet(hasNewClips ? QStringLiteral("color: palette(link);") : QString());
     resumeEditing->setEnabled(!source.isEmpty());
 }
 
