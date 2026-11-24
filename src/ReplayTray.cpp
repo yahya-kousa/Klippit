@@ -2,6 +2,7 @@
 #include "Editor.h"
 #include "ReplayAppFolders.h"
 #include "ReplaySettings.h"
+#include "SaveFolders.h"
 #ifdef KLIPPIT_PACKAGED
 #include "AppUpdate.h"
 #endif
