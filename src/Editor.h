@@ -1,14 +1,16 @@
 #pragma once
 #include "ClipExporter.h"
+#include "StepFrames.h"
 #include "ClipQueue.h"
 #include <QWidget>
 #include <QMediaPlayer>
 #include <QAudioOutput>
 #include <QProcess>
-#include <QElapsedTimer>
+#include <QTimer>
 #include <optional>
 #include <vector>
 
+class FrameCanvas;
 class TimelineSlider;
 class ClipMarkers;
 class QLabel;
@@ -30,7 +32,19 @@ class Editor : public QWidget {
     int pendingStep = 0;
     int heldDirection = 0;
     bool forwardPlaying = false, repeatingStep = false;
-    QElapsedTimer stepSeek;
+    StepFrames stepFrames;
+    QStackedWidget *previewStack;
+    FrameCanvas *frameCanvas;
+    std::optional<qint64> requestedFrame;
+    qint64 batchTargetUs = 0;
+    void leaveCachedPreview();
+    const std::vector<qint64> &stepIndex(qint64 position) const;
+    void loadFrameBatch(qint64 target, int direction);
+    void displayStep(qint64 target, const QImage &image);
+    int requestedDirection = 0;
+    QTimer reverseStepTimer;
+
+    void advanceReverseHold();
     void finishHold();
     void probeFrames(qint64 centerUs);
 

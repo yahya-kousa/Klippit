@@ -10,6 +10,31 @@
 #include <utility>
 #include "TrimRange.h"
 
+class FrameCanvas : public QWidget {
+public:
+    QImage image;
+protected:
+    void paintEvent(QPaintEvent *) override {
+        QPainter painter(this);
+        painter.fillRect(rect(), Qt::black);
+        const auto size = image.size().scaled(this->size(), Qt::KeepAspectRatio);
+        const QRect area(QPoint((width() - size.width()) / 2, (height() - size.height()) / 2), size);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+        painter.drawImage(area, image);
+    }
+};
+
+void Editor::leaveCachedPreview()
+{
+    requestedFrame.reset();
+    stepFrames.clear();
+    if (previewStack->currentWidget() == frameCanvas) {
+        player.setPosition(playheadUs() / 1000);
+        previewStack->setCurrentIndex(0);
+        frameCanvas->image = {};
+    }
+}
+
 static QString timestamp(qint64 ms)
 {
     return QString("%1:%2.%3").arg(ms / 60000)
@@ -23,12 +48,13 @@ qint64 Editor::playheadUs() const
 
 void Editor::clearFrameStep()
 {
+    reverseStepTimer.stop();
     if (forwardPlaying) player.pause();
     if (pendingStep && status->text() == "Finding nearby frames…") status->clear();
     pendingStep = 0;
     heldDirection = 0;
     repeatingStep = forwardPlaying = false;
-    stepSeek.invalidate();
+    leaveCachedPreview();
     steppedFrameUs.reset();
 }
 
@@ -279,7 +305,9 @@ void Editor::showClipQueue()
 
 void Editor::finishHold()
 {
+    reverseStepTimer.stop();
     if (repeatingStep) {
+        requestedFrame.reset();
         pendingStep = 0;
         if (status->text() == "Finding nearby frames…") status->clear();
     }
@@ -313,25 +341,30 @@ void Editor::keyPressEvent(QKeyEvent *event)
         heldDirection = direction;
         stepFrame(direction);
     } else if (heldDirection == direction) {
+        const bool firstRepeat = !repeatingStep;
         repeatingStep = true;
         if (direction > 0 && !forwardPlaying) {
             pendingStep = 0;
             if (status->text() == "Finding nearby frames…") status->clear();
+            leaveCachedPreview();
             steppedFrameUs.reset();
             forwardPlaying = true;
             player.play();
-        } else if (direction < 0 && !pendingStep) {
-            // Some backends land on a nearby frame or emit no signal for a repeated seek.
-            // Re-anchor to what is visible before retrying a stalled step.
-            if (stepSeek.isValid() && stepSeek.elapsed() >= 500) {
-                const auto frame = player.videoSink()->videoFrame();
-                if (frame.startTime() >= 0) steppedFrameUs = frame.startTime();
-                stepSeek.invalidate();
-            }
-            if (!stepSeek.isValid()) stepFrame(direction);
+        } else if (direction < 0 && firstRepeat) {
+            advanceReverseHold();
         }
     }
     event->accept();
+}
+
+void Editor::advanceReverseHold()
+{
+    if (pendingStep || !repeatingStep || heldDirection != -1) return;
+    if (requestedFrame) return;
+    if (!frameTimesUs.empty() && playheadUs() <= frameTimesUs.front() &&
+        !videoPacketTimesUs.empty() && frameTimesUs.front() == videoPacketTimesUs.front())
+        return;
+    stepFrame(-1);
 }
 
 void Editor::keyReleaseEvent(QKeyEvent *event)
@@ -349,12 +382,14 @@ void Editor::stepFrame(int direction)
     if (source.isEmpty() || !player.isSeekable()) return;
     previewing = false;
     player.pause();
-    const qint64 positionUs = playheadUs();
-    if (frameWindowCenterUs && (positionUs == *frameWindowCenterUs ||
-        (positionUs >= frameTimesUs.front() && positionUs <= frameTimesUs.back()))) {
-        if (seekAdjacentFrame(positionUs, direction)) return;
-        if (positionUs == *frameWindowCenterUs) return;
-    }
+    const auto visible = player.videoSink()->videoFrame();
+    const qint64 presentedUs = steppedFrameUs.value_or(visible.startTime() >= 0
+        ? visible.startTime() : player.position() * 1000);
+    const qint64 positionUs = requestedFrame.value_or(presentedUs);
+    // Packet PTS supply a fast hint after a jump. Only a decoded image with
+    // the requested timestamp can be shown.
+    if (seekAdjacentFrame(positionUs, direction)) return;
+    if (frameWindowCenterUs == positionUs) return;
     pendingStep = direction;
     status->setText("Finding nearby frames…");
     if (probe.state() != QProcess::NotRunning || frameProbe.state() != QProcess::NotRunning) return;
@@ -387,34 +422,78 @@ void Editor::probeFrames(qint64 positionUs)
 
 bool Editor::seekAdjacentFrame(qint64 positionUs, int direction)
 {
-    const auto after = std::upper_bound(frameTimesUs.begin(), frameTimesUs.end(), positionUs);
-    if (direction < 0 && after - frameTimesUs.begin() < 2) return false;
-    if (direction > 0 && after == frameTimesUs.end()) return false;
+    const auto &nearby = stepIndex(positionUs);
+    const bool atEdge = !nearby.empty() && (direction < 0 ? positionUs <= nearby.front()
+                                                         : positionUs >= nearby.back());
+    const auto &index = atEdge && !videoPacketTimesUs.empty() ? videoPacketTimesUs : nearby;
+    const auto after = std::upper_bound(index.begin(), index.end(), positionUs);
+    if (direction < 0 && after - index.begin() < 2) return false;
+    if (direction > 0 && after == index.end()) return false;
     const auto frame = direction > 0 ? after : std::prev(after, 2);
-    steppedFrameUs = *frame;
-
-    // Qt seeks in milliseconds and can render the preceding frame at a
-    // boundary. Seek inside the frame while keeping its timestamp for marks.
-    const auto next = std::next(frame);
-    const qint64 frameSpanUs = next == frameTimesUs.end() ? 8000 : *next - *frame;
-    const qint64 insideUs = *frame + std::min<qint64>(frameSpanUs / 2, 4000);
-    stepSeek.start();
-    player.setPosition(std::min(insideUs / 1000, player.duration()));
-    const QSignalBlocker block(timeline);
-    timeline->setValue(int(*steppedFrameUs / 1000));
-    refresh();
-    const qint64 edge = direction < 0 ? frameTimesUs.front() : frameTimesUs.back();
-    if (qAbs(edge - *frame) < 400000 &&
-        (direction < 0 ? edge > 0 : edge < player.duration() * 1000 - 100000))
-        probeFrames(edge + direction * 500000);
+    requestedDirection = direction;
+    auto image = stepFrames.image(*frame);
+    if (image.isNull()) {
+        requestedFrame = *frame;
+        if (!stepFrames.busy()) loadFrameBatch(*frame, direction);
+    } else {
+        requestedFrame.reset();
+        displayStep(*frame, image);
+    }
     return true;
+}
+
+const std::vector<qint64> &Editor::stepIndex(qint64 position) const
+{
+    if (!frameTimesUs.empty() && frameTimesUs.front() <= position && position <= frameTimesUs.back())
+        return frameTimesUs;
+    return videoPacketTimesUs;
+}
+
+void Editor::loadFrameBatch(qint64 target, int direction)
+{
+    const auto &index = stepIndex(target);
+    auto it = std::lower_bound(index.begin(), index.end(), target);
+    if (it == index.end() || *it != target) {
+        batchTargetUs = target;
+        stepFrames.load(source, target, target);
+        return;
+    }
+    const auto behind = direction < 0 ? StepFrames::batchSize - 2 : 2;
+    const auto start = it - std::min<std::ptrdiff_t>(it - index.begin(), behind);
+    batchTargetUs = target;
+    stepFrames.load(source, *start, target);
+}
+
+void Editor::displayStep(qint64 target, const QImage &image)
+{
+    steppedFrameUs = target;
+    frameCanvas->image = image;
+    previewStack->setCurrentWidget(frameCanvas);
+    frameCanvas->update();
+    const QSignalBlocker block(timeline);
+    timeline->setValue(int(target / 1000));
+    refresh();
+    if (heldDirection == -1 && repeatingStep) reverseStepTimer.start(16);
+
+    const int direction = requestedDirection;
+    const auto &index = stepIndex(target);
+    const auto it = std::lower_bound(index.begin(), index.end(), target);
+    if (!stepFrames.busy()) {
+        for (int distance = 1; distance <= StepFrames::batchSize / 2; ++distance) {
+            const auto ahead = it - index.begin() + direction * distance;
+            if (ahead < 0 || ahead >= std::ssize(index)) break;
+            if (!stepFrames.image(index[ahead]).isNull()) continue;
+            loadFrameBatch(index[ahead], direction);
+            break;
+        }
+    }
 }
 
 void Editor::mark(bool first)
 {
     if (player.duration() <= 0) return;
     auto position = playheadUs();
-    if (stepSeek.isValid() || forwardPlaying) {
+    if (forwardPlaying) {
         const auto frame = player.videoSink()->videoFrame();
         if (frame.startTime() >= 0) position = frame.startTime();
     }
@@ -488,7 +567,10 @@ void Editor::closeEvent(QCloseEvent *event)
     if (exporter.isBusy()) {
         status->setText("Export in progress. Close the window after it finishes.");
         event->ignore();
-    } else QWidget::closeEvent(event);
+    } else {
+        clearFrameStep();
+        QWidget::closeEvent(event);
+    }
 }
 
 void Editor::showAndActivate()
@@ -610,6 +692,7 @@ Editor::Editor()
         }
         previewing = false;
         player.pause();
+        clearFrameStep();
         refreshHome();
         pages->setCurrentWidget(homePage);
     });
@@ -627,7 +710,11 @@ Editor::Editor()
     connect(trashButton, &QPushButton::clicked, this, [this] {
         if (queueEntry) trashClips({*queueEntry}, clipCompleted, this);
     });
-    layout->addWidget(video, 1);
+    previewStack = new QStackedWidget;
+    frameCanvas = new FrameCanvas;
+    previewStack->addWidget(video);
+    previewStack->addWidget(frameCanvas);
+    layout->addWidget(previewStack, 1);
     auto *track = new QVBoxLayout;
     track->setSpacing(0);
     track->addWidget(markers);
@@ -748,11 +835,29 @@ Editor::Editor()
         else if (frameTimesUs.empty()) status->setText("No video frames found near the playhead.");
         else seekAdjacentFrame(playheadUs(), direction);
     });
+    reverseStepTimer.setTimerType(Qt::PreciseTimer);
+    reverseStepTimer.setSingleShot(true);
+    connect(&reverseStepTimer, &QTimer::timeout, this, &Editor::advanceReverseHold);
     player.setVideoOutput(video);
-    connect(video->videoSink(), &QVideoSink::videoFrameChanged, this, [this](const QVideoFrame &frame) {
-        if (!steppedFrameUs || !frame.isValid()) return;
-        // Container and backend timestamps can differ by a millisecond.
-        if (qAbs(frame.startTime() - *steppedFrameUs) <= 1000) stepSeek.invalidate();
+    connect(&stepFrames, &StepFrames::loaded, this, [this] {
+        if (!requestedFrame) return;
+        const auto target = *requestedFrame;
+        const auto image = stepFrames.image(target);
+        if (!image.isNull()) {
+            requestedFrame.reset();
+            displayStep(target, image);
+        } else if (batchTargetUs != target) {
+            loadFrameBatch(target, requestedDirection);
+        } else {
+            requestedFrame.reset();
+            const auto position = playheadUs();
+            if (frameProbeCenterUs != position || frameWindowCenterUs != position) {
+                pendingStep = requestedDirection;
+                probeFrames(position);
+            } else {
+                status->setText("Could not decode the selected preview frame.");
+            }
+        }
     });
     player.setAudioOutput(&audio);
     connect(&player, &QMediaPlayer::durationChanged, this, [this](qint64 d){
