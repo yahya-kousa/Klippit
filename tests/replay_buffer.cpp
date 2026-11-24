@@ -55,14 +55,16 @@ int main(int argc, char **argv)
     const auto pending = queue.entries(false);
     if (pending.size() != 2) return 1;
     for (const auto &entry : pending) {
-        if (!QFile::exists(entry.path)) return 1;
+        if (!entry.unseen || !QFile::exists(entry.path)) return 1;
     }
     const auto entry = pending.first();
+    queue.markSeen({entry});
     if (!queue.setCompleted(entry, true)) return 1;
     const ClipQueue reopened(queueDir.path());
     const auto completed = reopened.entries(true);
     if (reopened.entries(false).size() != 1 || completed.size() != 1 ||
-        completed.first().id != entry.id || !QFile::exists(entry.path)) return 1;
+        !reopened.entries(false).first().unseen || completed.first().unseen || completed.first().id != entry.id || !QFile::exists(entry.path)) return 1;
     if (!reopened.setCompleted(completed.first(), false)) return 1;
-    return reopened.entries(true).isEmpty() && reopened.entries(false).size() == 2 ? 0 : 1;
+    if (!reopened.entries(true).isEmpty() || reopened.entries(false).size() != 2) return 1;
+    return reopened.removeEntry(entry, false) && QFile::exists(entry.path) ? 0 : 1;
 }

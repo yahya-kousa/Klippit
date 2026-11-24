@@ -245,6 +245,7 @@ void Editor::showClipQueue()
             item->setToolTip(entry.path);
             if (selectedIds.contains(entry.id)) item->setSelected(true);
         }
+        queue.markSeen(entries);
         if (selectFirst && !entries.isEmpty()) list->setCurrentRow(0);
         selectFirst = false;
         changeState->setText(completed->isChecked() ? "Move Back to Queue" : "Mark Done");
@@ -671,8 +672,15 @@ void Editor::setupHome()
 
 void Editor::refreshHome()
 {
-    const auto pending = ClipQueue().entries(false).size();
-    homeQueue->setText(QString("Clips to Trim (%1)").arg(pending));
+    const auto pending = ClipQueue().entries(false);
+    const auto unseen = std::count_if(pending.begin(), pending.end(),
+                                      [](const ClipQueue::Entry &entry) { return entry.unseen; });
+    QString label = tr("Clips to Trim (%1)").arg(pending.size());
+    if (unseen) label += tr("  ·  %1 new").arg(unseen);
+    homeQueue->setText(label);
+    auto font = homeQueue->font();
+    font.setBold(unseen > 0);
+    homeQueue->setFont(font);
     resumeEditing->setEnabled(!source.isEmpty());
 }
 

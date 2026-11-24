@@ -10,6 +10,7 @@ public:
         QString id;
         QString path;
         QDateTime savedAt;
+        bool unseen = false;
     };
 
     explicit ClipQueue(QString directory = storageDirectory());
@@ -17,6 +18,7 @@ public:
     bool ensureDirectory() const;
     bool add(const QString &path) const;
     QList<Entry> entries(bool completed, bool *readError = nullptr) const;
+    void markSeen(const QList<Entry> &entries) const;
     bool setCompleted(const Entry &entry, bool completed) const;
 
     bool removeEntry(const Entry &entry, bool completed) const;

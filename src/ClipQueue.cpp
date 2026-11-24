@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSaveFile>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QUuid>
 #include <algorithm>
@@ -33,7 +34,7 @@ bool ClipQueue::add(const QString &path) const
     const QFileInfo clip(path);
     if (!clip.isFile() || !ensureDirectory()) return false;
     const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    const QJsonObject entry{{"path", clip.absoluteFilePath()},
+    const QJsonObject entry{{"notify", true}, {"path", clip.absoluteFilePath()},
                             {"saved_at", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}};
     const auto bytes = QJsonDocument(entry).toJson(QJsonDocument::Compact);
     QSaveFile file(entryPath(id, false));
@@ -46,6 +47,7 @@ QList<ClipQueue::Entry> ClipQueue::entries(bool completed, bool *readError) cons
     QList<Entry> result;
     if (root.isEmpty()) return result;
     const QString suffix = completed ? ".done.json" : ".pending.json";
+    const QSettings settings("Klippit", "Klippit");
     for (const auto &name : QDir(root).entryList({"*" + suffix}, QDir::Files)) {
         const auto id = name.chopped(suffix.size());
         if (QUuid::fromString(id).isNull()) continue;
@@ -59,13 +61,22 @@ QList<ClipQueue::Entry> ClipQueue::entries(bool completed, bool *readError) cons
             if (readError) *readError = true;
             continue;
         }
-        result.append({id, path, savedAt});
+        const bool unseen = entry["notify"].toBool() && !settings.contains("queue/seen/" + id);
+        result.append({id, path, savedAt, unseen});
     }
     std::sort(result.begin(), result.end(), [](const auto &a, const auto &b) {
         if (a.savedAt != b.savedAt) return a.savedAt > b.savedAt;
         return a.id < b.id;
     });
     return result;
+}
+
+void ClipQueue::markSeen(const QList<Entry> &entries) const
+{
+    QSettings settings("Klippit", "Klippit");
+    for (const auto &entry : entries) {
+        if (entry.unseen) settings.setValue("queue/seen/" + entry.id, true);
+    }
 }
 
 bool ClipQueue::setCompleted(const Entry &entry, bool completed) const
@@ -76,6 +87,8 @@ bool ClipQueue::setCompleted(const Entry &entry, bool completed) const
 
 bool ClipQueue::removeEntry(const Entry &entry, bool completed) const
 {
-    return !root.isEmpty() && !QUuid::fromString(entry.id).isNull() &&
-           QFile::remove(entryPath(entry.id, completed));
+    if (root.isEmpty() || QUuid::fromString(entry.id).isNull() ||
+        !QFile::remove(entryPath(entry.id, completed))) return false;
+    QSettings("Klippit", "Klippit").remove("queue/seen/" + entry.id);
+    return true;
 }
