@@ -14,7 +14,7 @@ public:
     explicit Replay(QString path, qint64 maxHistoryBytes = 96 * 1024 * 1024,
                     int historySeconds = 15, ClipQueue clipQueue = ClipQueue());
     bool ingest(const QByteArray &chunk);
-    void request(const QString &folder = {});
+    void request(const QString &folder = {}, const QString &app = {});
     bool waitingForFragment() const { return requestTimer.isValid(); }
     bool hasHistory() const { return !ring.empty(); }
     bool saving() const { return !saves.empty(); }
@@ -25,7 +25,7 @@ private:
         QByteArray data;
     };
     struct Save {
-        QString folder;
+        QString folder, app;
         QList<QByteArray> fragments;
         QElapsedTimer timer;
         QElapsedTimer readyTimer;
@@ -42,7 +42,7 @@ private:
 
     QProcess writer;
     ClipQueue queue;
-    QString firstPath, requestedFolder;
+    QString firstPath, requestedFolder, requestedApp;
     QByteArray header, pending, metadata;
     std::optional<qint64> start;
     std::deque<Fragment> ring;

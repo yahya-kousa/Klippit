@@ -83,13 +83,14 @@ void Replay::report(const char *event, const QString &detail)
     QTextStream(stdout) << QJsonDocument(message).toJson(QJsonDocument::Compact) << Qt::endl;
 }
 
-void Replay::request(const QString &folder)
+void Replay::request(const QString &folder, const QString &app)
 {
     if (waitingForFragment()) {
         report("clip_coalesced", QStringLiteral("Wait for the next video fragment before saving again."));
         return;
     }
     requestedFolder = folder;
+    requestedApp = app;
     requestTimer.start();
 }
 
@@ -98,6 +99,7 @@ void Replay::queueSave()
     Save snapshot;
     snapshot.readyTimer.start();
     snapshot.folder = requestedFolder;
+    snapshot.app = requestedApp;
     snapshot.timer = requestTimer;
     requestTimer.invalidate();
     auto first = ring.begin();
@@ -140,7 +142,7 @@ void Replay::finishSave(bool success, const QString &path)
         const bool queued = queue.add(path);
         if (!queued) qWarning() << "Clip saved, but could not add it to Clips to Trim:" << path;
         qInfo() << "Saved" << path << "in" << elapsed << "ms";
-        const QJsonObject message{{"event", "clip_saved"}, {"path", path}, {"elapsed_ms", elapsed},
+        const QJsonObject message{{"event", "clip_saved"}, {"path", path}, {"app", snapshot.app}, {"elapsed_ms", elapsed},
                                   {"snapshot_to_publish_ms", readyToPublished}, {"fragment_bytes", snapshot.bytes},
                                   {"peak_writer_queue_bytes", snapshot.peakWriterBytes}, {"enqueue_ns", snapshot.enqueueNs},
                                   {"queued", queued}, {"first_fragment_ms", snapshot.firstFragment / 90},

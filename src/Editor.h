@@ -3,6 +3,9 @@
 #include "StepFrames.h"
 #include "ClipQueue.h"
 #include <QWidget>
+#include <QKeySequence>
+#include <array>
+#include <functional>
 #include <QMediaPlayer>
 #include <QAudioOutput>
 #include <QProcess>
@@ -15,8 +18,8 @@ class FrameCanvas;
 class TimelineSlider;
 class ClipMarkers;
 class QLabel;
-class QMenu;
 class QPushButton;
+class QShortcut;
 class QStackedWidget;
 class QToolButton;
 
@@ -48,6 +51,16 @@ class Editor : public QWidget {
     QTimer reverseStepTimer;
     QElapsedTimer reverseStepTime;
 
+    enum Shortcut { PlayPause, StepBack, StepForward, MarkIn, MarkOut, Preview, Export, Open, ShortcutCount };
+    using Shortcuts = std::array<QKeySequence, ShortcutCount>;
+    Shortcuts shortcuts;
+    std::array<QShortcut *, ShortcutCount> shortcutActions{};
+    std::array<QPushButton *, ShortcutCount> shortcutButtons{};
+    static Shortcuts defaultShortcuts();
+    static QString shortcutError(const Shortcuts &keys);
+    void applyShortcuts();
+    int stepDirection(const QKeyEvent *event) const;
+    void handleStepPress(QKeyEvent *event);
     void advanceReverseHold();
     void finishHold();
     void probeFrames(qint64 centerUs);
@@ -59,7 +72,8 @@ class Editor : public QWidget {
     QLabel *status;
     QPushButton *markDoneButton;
     QPushButton *trashButton;
-    QMenu *settingsMenu;
+    QPushButton *settingsButton;
+    std::function<void(const QString &)> replayHotkeyChanged;
     QStackedWidget *pages;
     QWidget *homePage;
     QWidget *editPage;
@@ -99,14 +113,14 @@ class Editor : public QWidget {
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
-    void keyPressEvent(QKeyEvent *event) override;
-    void keyReleaseEvent(QKeyEvent *event) override;
     bool event(QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 
 public:
     Editor();
-    void addSettingsAction(QAction *action);
+    void showSettings();
+    void setReplayHotkeyHandler(std::function<void(const QString &)> handler);
+    void setSettingsEnabled(bool enabled);
     void setReplayActions(QAction *state, QAction *start, QAction *stop);
     void showClipQueue();
     void showAndActivate();

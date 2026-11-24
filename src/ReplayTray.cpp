@@ -49,17 +49,11 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
     });
     details->setVisible(false);
     menu.addSeparator();
-    settingsAction = menu.addAction("Replay Settings…", this, [this] {
+    settingsAction = menu.addAction("Settings…", this, [this] {
         showEditor();
-        if (quitting || QApplication::activeModalWidget()) return;
-        if (const auto shortcut = editReplaySettings(this->editor)) updateHotkey(*shortcut);
+        if (!quitting) this->editor.showSettings();
     });
-    editor.addSettingsAction(settingsAction);
-    menu.addAction("Save folders…", this, [this] {
-        showEditor();
-        if (quitting || QApplication::activeModalWidget()) return;
-        editSaveFolders(this->editor);
-    });
+    editor.setReplayHotkeyHandler([this](const QString &shortcut) { updateHotkey(shortcut); });
     hotkeyTimeout.setSingleShot(true);
     connect(&hotkeyTimeout, &QTimer::timeout, this, [this] {
         finishHotkeyUpdate("The recorder did not confirm the new shortcut.");
@@ -107,8 +101,8 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
             }
             if (name == "clip_saved") {
                 const QFileInfo saved(event["path"].toString());
-                const auto app = saved.dir().dirName();
-                if (app.compare("Desktop", Qt::CaseInsensitive) != 0) {
+                const auto app = event.value("app").toString(saved.dir().dirName());
+                if (!app.isEmpty() && app.compare("Desktop", Qt::CaseInsensitive) != 0) {
                     QSettings settings("Klippit", "Klippit");
                     auto known = settings.value(clippedAppsKey).toStringList();
                     if (!known.contains(app, Qt::CaseInsensitive)) {
@@ -187,6 +181,7 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
 
 ReplayTray::~ReplayTray()
 {
+    editor.setReplayHotkeyHandler({});
 #ifdef Q_OS_WIN
     if (sessionWindow) {
         QApplication::instance()->removeNativeEventFilter(this);
@@ -243,6 +238,7 @@ void ReplayTray::updateHotkey(const QString &shortcut)
     }
     pendingHotkey = shortcut;
     settingsAction->setEnabled(false);
+    editor.setSettingsEnabled(false);
     if (recorder.write("hotkey " + shortcut.toUtf8() + '\n') < 0) {
         finishHotkeyUpdate("Could not send the shortcut to the recorder.");
         return;
@@ -256,6 +252,7 @@ void ReplayTray::finishHotkeyUpdate(const QString &message)
     pendingHotkey.clear();
     hotkeyTimeout.stop();
     settingsAction->setEnabled(true);
+    editor.setSettingsEnabled(true);
     if (!message.isEmpty()) {
         diagnostics = (diagnostics + '\n' + message).right(4000);
         details->setVisible(true);
