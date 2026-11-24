@@ -29,11 +29,13 @@ Klippit is open source under the [GNU General Public License version 3](LICENSE)
 
 The green flag marks your requested start and the orange flag marks your end. The playhead shows your current position. Preview plays the default audio track. Export copies the first video track and all audio tracks. MP4 is selected by default for sharing. Choose Matroska (MKV) in the export dialog, or use **Save as MKV** if FFmpeg reports that MP4 cannot carry a track.
 
+Open **Settings…** and choose the **Editor shortcuts** tab to change any editor hotkey, including Open file, Preview, and Export. Choose one key combination per action. Changes apply when you save, and **Restore shortcut defaults** fills in the original keys.
+
 Tap either key to pause and step one frame. Hold period to play forward until release, or hold comma to step backward repeatedly. Stepped previews follow the editor’s size and display scaling, up to the source resolution and a 4K preview limit. Press **I** or **O** to mark the displayed frame’s timestamp. Playback and exports use the original video.
 
 ## Choose where clips save
 
-In the Klippit window, open **Settings → Save folders…**. You can also open **Save folders…** from the Windows tray. Use **Browse…** to choose a folder for replay captures or trimmed exports. The replay folder takes effect the next time you start replay. The trim folder sets the starting location of the export dialog, where you can still pick a different destination for each export.
+Open **Settings…** in the Klippit window or Windows tray and select the **Save folders** tab. Use **Browse…** to choose a folder for replay captures or trimmed exports. The replay folder takes effect the next time you start replay. The trim folder sets the starting location of the export dialog, where you can still pick a different destination for each export.
 
 **Use default** restores **Videos → Klippit** for replays and the source clip's folder for trims. Saved clips stay in their original locations.
 
@@ -80,11 +82,11 @@ The editor and export workflow have been tested on CachyOS with a 1440p Overwatc
 
 Build the Windows target `klippit` to build the app and its recorder together, then open `klippit.exe`. On Home, select **Start Replay** and watch the status for when the buffer has footage. Press the save hotkey (**Ctrl+Shift+F9** by default). **Clips to Trim** shows the pending queue count and opens the clip list. Select a replay to open it in the editor, or use **Open file…** to edit a recording from disk. **Back to Home** pauses the editor and **Resume editing** returns to your trim. Replay controls and the clip queue are also available from the Windows tray. The tray defaults to desktop audio and 15 seconds of history.
 
-The app groups new MKVs under the selected replay folder (default **Videos → Klippit**) by the foreground app when you press Save. Under **Settings → Save folders…**, check previously clipped apps to send their future clips to **Desktop**. Uncheck one to resume saving to its own folder. Rules take effect on the next save after you confirm the dialog. Explorer and unidentified windows use **Desktop**. All folders feed the same trim queue.
+The app groups new MKVs under the selected replay folder (default **Videos → Klippit**) by the foreground app when you press Save. In **Settings… → Save folders**, find the app under **App folders** after saving a replay from it. Enter a **Custom folder name** such as `Ocarina of Time` for Longshot. Clear the name to use the app name again. **Use Desktop** takes priority while checked. Rules apply to future saves. Explorer and unidentified windows use **Desktop**. All folders feed the same trim queue.
 
 Closing the editor leaves the tray and recorder running. Launching Klippit again opens the existing window. **Stop Replay** finishes accepted saves, and **Quit Klippit** also closes the tray. Use **Quit Klippit** before rebuilding on Windows.
 
-Open **Settings → Replay Settings…** in the Klippit window or **Replay Settings…** from the tray to set the history length, save hotkey, and audio source. **Advanced** exposes target FPS and video bitrate. The save hotkey updates while replay is running. Other changes take effect the next time replay starts, including automatic startup. If Windows rejects a live hotkey change, Klippit keeps the previous shortcut. For a microphone option, choose an input from the dropdown. Click **Refresh** after connecting a device. A saved microphone stays selected if it is temporarily unavailable. If Windows rejects your shortcut, open **Recorder Error** from the tray for details.
+Open **Settings…** in the Klippit window or tray and choose the **Replay** tab to set the history length, save hotkey, and audio source. **Advanced** exposes target FPS and video bitrate. The save hotkey updates while replay is running. Other changes take effect the next time replay starts, including automatic startup. If Windows rejects a live hotkey change, Klippit keeps the previous shortcut. For a microphone option, choose an input from the dropdown. Click **Refresh** after connecting a device. A saved microphone stays selected if it is temporarily unavailable. If Windows rejects your shortcut, open **Recorder Error** from the tray for details.
 
 To launch minimized to the tray when you sign in, enable **Launch at Windows sign-in**. Enable **Start replay automatically** as well to fill the buffer whenever Klippit starts. Both options are off by default. Windows starts the app from the path registered when you enable the option. If you move the build, toggle **Launch at Windows sign-in** off and back on from the new copy.
 

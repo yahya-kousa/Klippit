@@ -1,8 +1,10 @@
 #pragma once
 
 #include <QString>
+#include <functional>
 
 class QWidget;
+class QSettings;
 
 struct SaveFolders {
     QString replays;
@@ -11,4 +13,4 @@ struct SaveFolders {
 
 SaveFolders saveFolders();
 QString defaultReplayFolder();
-void editSaveFolders(QWidget &parent);
+std::function<void(QSettings &)> createSaveFoldersPage(QWidget &page);

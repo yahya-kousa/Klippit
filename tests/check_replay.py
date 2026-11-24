@@ -33,7 +33,8 @@ with tempfile.TemporaryDirectory() as tmp:
             assert event["enqueue_ns"] >= 0 and event["snapshot_to_publish_ms"] >= 0
         assert events[0]["last_fragment_ms"] < events[1]["first_fragment_ms"]
         if history == 60:
-            first = directory / "Overwatch" / first.name
+            assert [event["app"] for event in events] == ["Longshot", "Brave"]
+            first = directory / "Ocarina of Time" / first.name
         assert Path(events[0]["path"]) == first
         second = Path(events[1]["path"])
         assert second.parent == (directory / "Desktop" if history == 60 else directory)
