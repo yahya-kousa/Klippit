@@ -29,6 +29,8 @@ Klippit is open source under the [GNU General Public License version 3](LICENSE)
 
 The green flag marks your requested start and the orange flag marks your end. The playhead shows your current position. Preview plays the default audio track. Export copies the first video track and all audio tracks. MP4 is selected by default for sharing. Choose Matroska (MKV) in the export dialog, or use **Save as MKV** if FFmpeg reports that MP4 cannot carry a track.
 
+Change play/pause, frame stepping, and trim-mark keys under **Settings → Editor shortcuts…**. Choose one key combination per action. Changes apply when you save, and **Restore Defaults** fills in the original keys.
+
 Tap either key to pause and step one frame. Hold period to play forward until release, or hold comma to step backward repeatedly. Stepped previews follow the editor’s size and display scaling, up to the source resolution and a 4K preview limit. Press **I** or **O** to mark the displayed frame’s timestamp. Playback and exports use the original video.
 
 ## Choose where clips save
