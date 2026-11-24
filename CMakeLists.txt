@@ -6,6 +6,7 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets Multimedia MultimediaWidgets)
 qt_standard_project_setup()
 qt_add_executable(klippit
     src/main.cpp
+    src/AppStyle.h src/AppStyle.cpp
     src/Editor.h src/Editor.cpp
     src/StepFrames.h src/StepFrames.cpp
     src/ClipQueue.h src/ClipQueue.cpp
@@ -13,6 +14,7 @@ qt_add_executable(klippit
     src/ClipExporter.h src/ClipExporter.cpp
     src/SaveFolders.h src/SaveFolders.cpp
 )
+qt_add_resources(klippit appearance PREFIX "/appearance" BASE src FILES src/klippit.qss)
 target_link_libraries(klippit PRIVATE Qt6::Widgets Qt6::Multimedia Qt6::MultimediaWidgets)
 set_target_properties(klippit PROPERTIES WIN32_EXECUTABLE TRUE)
 

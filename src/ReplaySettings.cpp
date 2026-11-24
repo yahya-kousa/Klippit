@@ -103,7 +103,10 @@ SaveReplaySettings createReplaySettingsPage(QWidget &page)
 {
     const auto settings = load();
     auto *layout = new QVBoxLayout(&page);
+    layout->setContentsMargins(18, 16, 18, 16);
+    layout->setSpacing(10);
     auto *basic = new QFormLayout;
+    basic->setVerticalSpacing(8);
     layout->addLayout(basic);
     auto spinBox = [](int minimum, int maximum, int value, const QString &suffix) {
         auto *spin = new QSpinBox;
