@@ -79,8 +79,8 @@ class Editor : public QWidget {
     QWidget *homePage;
     QWidget *editPage;
     QLabel *replayStatus = nullptr;
-    QToolButton *startReplay = nullptr;
-    QToolButton *stopReplay = nullptr;
+    QPushButton *startReplay = nullptr;
+    QPushButton *stopReplay = nullptr;
     QListWidget *recent = nullptr;
     int layoutScale = 0;
     QPushButton *homeQueue = nullptr;

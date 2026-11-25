@@ -21,12 +21,43 @@ static QIcon workspaceIcon(QStyle::StandardPixmap symbol, bool filled = false)
     QIcon result;
     for (const int size : {16, 24, 32, 48, 64, 96}) {
         for (const auto mode : {QIcon::Normal, QIcon::Disabled}) {
-            QPixmap image = source.pixmap(size, size);
+            QPixmap image(size, size);
+            image.fill(Qt::transparent);
             QPainter painter(&image);
-            painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+            painter.setRenderHint(QPainter::Antialiasing);
             const auto group = mode == QIcon::Disabled ? QPalette::Disabled : QPalette::Active;
             const auto role = filled && mode == QIcon::Normal ? QPalette::HighlightedText : QPalette::ButtonText;
-            painter.fillRect(image.rect(), QApplication::palette().color(group, role));
+            const QColor ink = QApplication::palette().color(group, role);
+            painter.scale(size / 24.0, size / 24.0);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(ink);
+            switch (symbol) {
+            case QStyle::SP_DirIcon:
+            case QStyle::SP_DialogOpenButton:
+                painter.drawRoundedRect(QRectF(2, 6, 20, 15), 2, 2);
+                painter.drawRoundedRect(QRectF(2, 3, 9, 7), 2, 2);
+                break;
+            case QStyle::SP_BrowserReload:
+                painter.setPen(QPen(ink, 2.3, Qt::SolidLine, Qt::RoundCap));
+                painter.setBrush(Qt::NoBrush);
+                painter.drawArc(QRectF(3, 3, 18, 18), 205*16, 290*16);
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(ink);
+                painter.drawPolygon(QPolygonF{{1,5},{8,8},{2,12}});
+                painter.drawPolygon(QPolygonF{{10,8},{16,12},{10,16}});
+                break;
+            case QStyle::SP_MediaPlay:
+                painter.drawPolygon(QPolygonF{{5,2},{22,12},{5,22}});
+                break;
+            case QStyle::SP_MediaStop:
+                painter.drawRoundedRect(QRectF(3,3,18,18),2,2);
+                break;
+            default:
+                painter.setRenderHint(QPainter::SmoothPixmapTransform);
+                painter.drawPixmap(QRect(1,1,22,22),source.pixmap(size,size));
+                painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+                painter.fillRect(QRect(0,0,24,24),ink);
+            }
             painter.end();
             result.addPixmap(image, mode);
         }
@@ -676,12 +707,15 @@ void Editor::setSettingsEnabled(bool enabled)
 
 void Editor::setReplayActions(QAction *state, QAction *start, QAction *stop)
 {
-    start->setIcon(workspaceIcon(QStyle::SP_MediaPlay));
-    stop->setIcon(workspaceIcon(QStyle::SP_MediaStop, true));
-    startReplay->setDefaultAction(start);
-    stopReplay->setDefaultAction(stop);
-    startReplay->show();
-    stopReplay->show();
+    auto bind = [this](QPushButton *button, QAction *action, QStyle::StandardPixmap symbol) {
+        button->setIcon(workspaceIcon(symbol, button == stopReplay));
+        button->setEnabled(action->isEnabled());
+        connect(action, &QAction::changed, button, [button, action] { button->setEnabled(action->isEnabled()); });
+        connect(button, &QPushButton::clicked, action, &QAction::trigger);
+        button->show();
+    };
+    bind(startReplay, start, QStyle::SP_MediaPlay);
+    bind(stopReplay, stop, QStyle::SP_MediaStop);
     const auto updateStatus = [this, state] {
         QString text = state->text();
         text.replace("Replay is buffering · Save with ", "Buffering · ");
@@ -702,8 +736,19 @@ void Editor::resizeEvent(QResizeEvent *event)
     auto bodyFont = QApplication::font();
     bodyFont.setPointSizeF(bodyFont.pointSizeF() * scale);
     setFont(bodyFont);
-    setStyleSheet(QStringLiteral("QPushButton, QToolButton { padding: %1px %2px; }")
-        .arg(qRound(8 * scale)).arg(qRound(7 * scale)));
+    setStyleSheet(QStringLiteral(
+        "QLabel, QPushButton, QToolButton, QListWidget { font-size: %1pt; }"
+        "QPushButton, QToolButton { padding: %2px %3px; }")
+        .arg(bodyFont.pointSizeF()).arg(qRound(8 * scale)).arg(qRound(9 * scale)));
+    homePage->layout()->setContentsMargins(qRound(28*scale), qRound(10*scale),
+                                           qRound(28*scale), qRound(16*scale));
+    homePage->layout()->setSpacing(qRound(12*scale));
+    for (auto *panel : homePage->findChildren<QFrame *>()) {
+        if (!panel->property("panel").toBool()) continue;
+        const int inset = qRound(16*scale);
+        panel->layout()->setContentsMargins(inset,inset,inset,inset);
+        panel->layout()->setSpacing(qRound(12*scale));
+    }
     for (auto *heading : findChildren<QLabel *>()) {
         if (heading->property("heading") == "section")
             heading->setStyleSheet(QStringLiteral("font-size: %1pt").arg(qRound(16 * scale)));
@@ -731,7 +776,7 @@ void Editor::setupHome()
 
     auto *panels = new QHBoxLayout;
     panels->setSpacing(16);
-    layout->addLayout(panels, 3);
+    layout->addLayout(panels);
 
     auto *clipsPanel = new QFrame;
     clipsPanel->setProperty("panel", true);
@@ -751,7 +796,7 @@ void Editor::setupHome()
     connect(homeQueue, &QPushButton::clicked, this, &Editor::showClipQueue);
     libraryHeader->addWidget(homeQueue);
     clipControls->addWidget(new QLabel(tr("Trim queued clips or open a file")));
-    clipControls->addStretch();
+
     auto *clipActions = new QHBoxLayout;
     auto *openFileButton = new QPushButton(tr("Open"));
     openFileButton->setIcon(workspaceIcon(QStyle::SP_DialogOpenButton));
@@ -783,23 +828,24 @@ void Editor::setupHome()
     replayStatus->setWordWrap(true);
     replayLayout->addWidget(replayStatus);
     auto *replayControls = new QHBoxLayout;
-    startReplay = new QToolButton;
+    startReplay = new QPushButton(tr("Start"));
 
-    stopReplay = new QToolButton;
+    stopReplay = new QPushButton(tr("Stop"));
     stopReplay->setProperty("primary", true);
     for (auto *button : {startReplay, stopReplay}) {
-        button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+
         button->hide();
         button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         replayControls->addWidget(button);
     }
-    replayLayout->addStretch();
+
     replayLayout->addLayout(replayControls);
     panels->addWidget(replayPanel, 1);
     recent = new QListWidget;
     recent->setObjectName("recentClips");
     recent->setAccessibleName(tr("Recent queued clips"));
     layout->addWidget(recent);
+    layout->addStretch();
     connect(recent, &QListWidget::itemActivated, this, [this](QListWidgetItem *item) {
         const auto path = item->data(Qt::UserRole).toString();
         if (QFileInfo::exists(path)) openFile(path);
@@ -817,7 +863,7 @@ void Editor::setupHome()
 void Editor::sizeRecentRows()
 {
     if (!recent || !recent->count()) return;
-    const int rowHeight = std::max(fontMetrics().height() + 14, height() / 10);
+    const int rowHeight = std::max(recent->fontMetrics().height() + 12, qRound(39 * layoutScale / 8.0));
     for (int i = 0; i < recent->count(); ++i)
         recent->item(i)->setSizeHint(QSize(1, rowHeight));
     recent->setFixedHeight(recent->count() * rowHeight + 2 * recent->frameWidth());
