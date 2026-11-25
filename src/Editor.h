@@ -81,7 +81,8 @@ class Editor : public QWidget {
     QLabel *replayStatus = nullptr;
     QToolButton *startReplay = nullptr;
     QToolButton *stopReplay = nullptr;
-    QListWidget *recent;
+    QListWidget *recent = nullptr;
+    int layoutScale = 0;
     QPushButton *homeQueue = nullptr;
     QPushButton *resumeEditing = nullptr;
     std::optional<ClipQueue::Entry> queueEntry;
@@ -116,6 +117,7 @@ class Editor : public QWidget {
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
     bool event(QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 
 public:
