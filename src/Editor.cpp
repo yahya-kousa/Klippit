@@ -14,6 +14,26 @@
 #include <utility>
 #include "TrimRange.h"
 
+// Preserve Qt's familiar silhouettes while giving each state the workspace foreground.
+static QIcon workspaceIcon(QStyle::StandardPixmap symbol, bool filled = false)
+{
+    const QIcon source = QApplication::style()->standardIcon(symbol);
+    QIcon result;
+    for (const int size : {16, 24, 32, 48, 64, 96}) {
+        for (const auto mode : {QIcon::Normal, QIcon::Disabled}) {
+            QPixmap image = source.pixmap(size, size);
+            QPainter painter(&image);
+            painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+            const auto group = mode == QIcon::Disabled ? QPalette::Disabled : QPalette::Active;
+            const auto role = filled && mode == QIcon::Normal ? QPalette::HighlightedText : QPalette::ButtonText;
+            painter.fillRect(image.rect(), QApplication::palette().color(group, role));
+            painter.end();
+            result.addPixmap(image, mode);
+        }
+    }
+    return result;
+}
+
 class FrameCanvas : public QWidget {
 public:
     QImage image;
@@ -225,10 +245,10 @@ void Editor::showClipQueue()
     auto *changeState = buttons->addButton("Mark Done", QDialogButtonBox::ActionRole);
     auto *trash = buttons->addButton("Trash original…", QDialogButtonBox::ActionRole);
     auto *remove = buttons->addButton("Remove from queue", QDialogButtonBox::ActionRole);
-    trash->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
-    changeState->setIcon(style()->standardIcon(QStyle::SP_DialogApplyButton));
+    trash->setIcon(workspaceIcon(QStyle::SP_TrashIcon));
+    changeState->setIcon(workspaceIcon(QStyle::SP_DialogApplyButton));
     remove->setToolTip("Forget this queue entry and keep any files on disk.");
-    openClip->setIcon(style()->standardIcon(QStyle::SP_DialogOpenButton));
+    openClip->setIcon(workspaceIcon(QStyle::SP_DialogOpenButton, true));
     openClip->setProperty("primary", true);
     queueHeader->addWidget(filters);
     layout->addLayout(queueHeader);
@@ -656,13 +676,17 @@ void Editor::setSettingsEnabled(bool enabled)
 
 void Editor::setReplayActions(QAction *state, QAction *start, QAction *stop)
 {
-    start->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
-    stop->setIcon(style()->standardIcon(QStyle::SP_MediaStop));
+    start->setIcon(workspaceIcon(QStyle::SP_MediaPlay));
+    stop->setIcon(workspaceIcon(QStyle::SP_MediaStop, true));
     startReplay->setDefaultAction(start);
     stopReplay->setDefaultAction(stop);
     startReplay->show();
     stopReplay->show();
-    const auto updateStatus = [this, state] { replayStatus->setText(state->text()); };
+    const auto updateStatus = [this, state] {
+        QString text = state->text();
+        text.replace("Replay is buffering · Save with ", "Buffering · ");
+        replayStatus->setText(text.startsWith("Buffering") ? QStringLiteral("●  ") + text : text);
+    };
     connect(state, &QAction::changed, this, updateStatus);
     updateStatus();
 }
@@ -670,8 +694,8 @@ void Editor::setReplayActions(QAction *state, QAction *start, QAction *stop)
 void Editor::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-    const double ratio = std::min(width()/960.0, height()/640.0);
-    const int step = std::clamp(int(ratio * 8), 8, 16);
+    const double ratio = std::min(width()/690.0, height()/400.0);
+    const int step = std::clamp(int(ratio * 8), 8, 20);
     if (step == layoutScale) return;
     layoutScale = step;
     const double scale = step / 8.0;
@@ -679,7 +703,7 @@ void Editor::resizeEvent(QResizeEvent *event)
     bodyFont.setPointSizeF(bodyFont.pointSizeF() * scale);
     setFont(bodyFont);
     setStyleSheet(QStringLiteral("QPushButton, QToolButton { padding: %1px %2px; }")
-        .arg(qRound(5 * scale)).arg(qRound(7 * scale)));
+        .arg(qRound(8 * scale)).arg(qRound(7 * scale)));
     for (auto *heading : findChildren<QLabel *>()) {
         if (heading->property("heading") == "section")
             heading->setStyleSheet(QStringLiteral("font-size: %1pt").arg(qRound(16 * scale)));
@@ -694,21 +718,19 @@ void Editor::resizeEvent(QResizeEvent *event)
         }
     };
     scaleIcon("brandIcon", QIcon(":/appearance/frog.png"), 38);
-    scaleIcon("libraryIcon", style()->standardIcon(QStyle::SP_DirIcon), 26);
-    scaleIcon("replayIcon", style()->standardIcon(QStyle::SP_BrowserReload), 26);
-    if (recent && recent->count())
-        recent->setFixedHeight(recent->count() * recent->sizeHintForRow(0) + 2 * recent->frameWidth());
+    scaleIcon("libraryIcon", workspaceIcon(QStyle::SP_DirIcon), 26);
+    scaleIcon("replayIcon", workspaceIcon(QStyle::SP_BrowserReload), 26);
+    sizeRecentRows();
 }
 
 void Editor::setupHome()
 {
     auto *layout = new QVBoxLayout(homePage);
-    layout->setContentsMargins(28, 28, 28, 28);
-    layout->setSpacing(24);
+    layout->setContentsMargins(28, 12, 28, 22);
+    layout->setSpacing(12);
 
     auto *panels = new QHBoxLayout;
     panels->setSpacing(16);
-    layout->addStretch(1);
     layout->addLayout(panels, 3);
 
     auto *clipsPanel = new QFrame;
@@ -731,11 +753,11 @@ void Editor::setupHome()
     clipControls->addWidget(new QLabel(tr("Trim queued clips or open a file")));
     clipControls->addStretch();
     auto *clipActions = new QHBoxLayout;
-    auto *openFileButton = new QPushButton(tr("Open file…"));
-    openFileButton->setIcon(style()->standardIcon(QStyle::SP_DialogOpenButton));
+    auto *openFileButton = new QPushButton(tr("Open"));
+    openFileButton->setIcon(workspaceIcon(QStyle::SP_DialogOpenButton));
     connect(openFileButton, &QPushButton::clicked, this, &Editor::open);
-    resumeEditing = new QPushButton(tr("Resume editing"));
-    resumeEditing->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
+    resumeEditing = new QPushButton(tr("Resume"));
+    resumeEditing->setIcon(workspaceIcon(QStyle::SP_MediaPlay));
     connect(resumeEditing, &QPushButton::clicked, this, [this] { pages->setCurrentWidget(editPage); });
     clipActions->addWidget(openFileButton);
     clipActions->addWidget(resumeEditing);
@@ -762,8 +784,9 @@ void Editor::setupHome()
     replayLayout->addWidget(replayStatus);
     auto *replayControls = new QHBoxLayout;
     startReplay = new QToolButton;
-    startReplay->setProperty("primary", true);
+
     stopReplay = new QToolButton;
+    stopReplay->setProperty("primary", true);
     for (auto *button : {startReplay, stopReplay}) {
         button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
         button->hide();
@@ -774,6 +797,7 @@ void Editor::setupHome()
     replayLayout->addLayout(replayControls);
     panels->addWidget(replayPanel, 1);
     recent = new QListWidget;
+    recent->setObjectName("recentClips");
     recent->setAccessibleName(tr("Recent queued clips"));
     layout->addWidget(recent);
     connect(recent, &QListWidget::itemActivated, this, [this](QListWidgetItem *item) {
@@ -781,7 +805,7 @@ void Editor::setupHome()
         if (QFileInfo::exists(path)) openFile(path);
         else showClipQueue();
     });
-    layout->addStretch(2);
+
 
     auto *watcher = new QFileSystemWatcher(this);
     const ClipQueue queue;
@@ -790,24 +814,47 @@ void Editor::setupHome()
     refreshHome();
 }
 
+void Editor::sizeRecentRows()
+{
+    if (!recent || !recent->count()) return;
+    const int rowHeight = std::max(fontMetrics().height() + 14, height() / 10);
+    for (int i = 0; i < recent->count(); ++i)
+        recent->item(i)->setSizeHint(QSize(1, rowHeight));
+    recent->setFixedHeight(recent->count() * rowHeight + 2 * recent->frameWidth());
+}
+
 void Editor::refreshHome()
 {
     const auto pending = ClipQueue().entries(false);
     const bool hasNewClips = std::any_of(pending.begin(), pending.end(),
                                          [](const ClipQueue::Entry &entry) { return entry.unseen; });
-    homeQueue->setText(tr("%1 to trim").arg(pending.size()));
+    homeQueue->setText(QString::number(pending.size()));
+    homeQueue->setAccessibleName(tr("%1 clips to trim").arg(pending.size()));
     recent->clear();
     for (const auto &entry : pending.mid(0, 3)) {
-        auto *item = new QListWidgetItem(QFileInfo(entry.path).fileName() + "    ·    " +
-            entry.savedAt.toLocalTime().toString("HH:mm:ss"), recent);
+        auto *item = new QListWidgetItem(recent);
+        const auto filename = QFileInfo(entry.path).fileName();
+        item->setData(Qt::AccessibleTextRole, filename);
+        auto *row = new QWidget;
+        row->setAttribute(Qt::WA_TransparentForMouseEvents);
+        auto *fields = new QHBoxLayout(row);
+        fields->setContentsMargins(12, 4, 12, 4);
+        auto *name = new QLabel(filename);
+        name->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        fields->addWidget(name, 1);
+        auto *play = new QLabel(QStringLiteral("▶"));
+        play->setForegroundRole(QPalette::Link);
+        fields->addWidget(play);
+        fields->addWidget(new QLabel(entry.savedAt.toLocalTime().toString("HH:mm:ss")));
+        item->setSizeHint(row->sizeHint());
+        recent->setItemWidget(item, row);
         item->setData(Qt::UserRole, entry.path);
         item->setToolTip(entry.path);
     }
-    if (recent->count())
-        recent->setFixedHeight(recent->count() * recent->sizeHintForRow(0) + 2 * recent->frameWidth());
+    sizeRecentRows();
     recent->setVisible(!pending.isEmpty());
     const auto description = hasNewClips ? tr("New clips are ready to trim.") : QString();
-    homeQueue->setToolTip(description);
+    homeQueue->setToolTip(tr("Open clips to trim"));
     homeQueue->setAccessibleDescription(description);
     if (homeQueue->property("newClips").toBool() != hasNewClips) {
         homeQueue->setProperty("newClips", hasNewClips);
@@ -873,7 +920,7 @@ void Editor::showSettings()
     connect(sidebar, &QListWidget::currentRowChanged, tabs, &QStackedWidget::setCurrentIndex);
     connect(tabs, &QStackedWidget::currentChanged, sidebar, qOverload<int>(&QListWidget::setCurrentRow));
     auto addPage = [&](QWidget *page, const QString &name, QStyle::StandardPixmap symbol) {
-        new QListWidgetItem(style()->standardIcon(symbol), name, sidebar);
+        new QListWidgetItem(workspaceIcon(symbol), name, sidebar);
         tabs->addWidget(page);
     };
 #ifdef Q_OS_WIN
@@ -982,14 +1029,14 @@ Editor::Editor()
       editPage(new QWidget)
 {
     setWindowTitle("Klippit");
-    resize(960, 640);
+    resize(860, 490);
     auto *windowLayout = new QVBoxLayout(this);
     windowLayout->setContentsMargins(0, 0, 0, 0);
     windowLayout->setSpacing(0);
     auto *navigation = new QHBoxLayout;
     navigation->setContentsMargins(28, 16, 28, 0);
     auto *homeButton = new QPushButton("Back to Home");
-    homeButton->setIcon(style()->standardIcon(QStyle::SP_ArrowBack));
+    homeButton->setIcon(workspaceIcon(QStyle::SP_ArrowBack));
     auto *frog = new QLabel;
     frog->setObjectName("brandIcon");
     frog->setPixmap(QPixmap(":/appearance/frog.png").scaled(38,38,Qt::KeepAspectRatio,Qt::SmoothTransformation));
@@ -999,7 +1046,9 @@ Editor::Editor()
     navigation->addWidget(brand);
     navigation->addWidget(homeButton);
     navigation->addStretch();
-    settingsButton->setText(tr("⚙  Settings"));
+    settingsButton->setText(QStringLiteral("⚙"));
+    settingsButton->setAccessibleName(tr("Settings"));
+    settingsButton->setToolTip(tr("Settings"));
     navigation->addWidget(settingsButton);
     connect(settingsButton, &QPushButton::clicked, this, &Editor::showSettings);
     windowLayout->addLayout(navigation);
@@ -1039,9 +1088,9 @@ Editor::Editor()
     video->setAutoFillBackground(true);
     auto *heading = new QHBoxLayout;
     heading->addWidget(title, 1);
-    markDoneButton->setIcon(style()->standardIcon(QStyle::SP_DialogApplyButton));
+    markDoneButton->setIcon(workspaceIcon(QStyle::SP_DialogApplyButton));
     heading->addWidget(markDoneButton);
-    trashButton->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
+    trashButton->setIcon(workspaceIcon(QStyle::SP_TrashIcon));
     heading->addWidget(trashButton);
     layout->addLayout(heading);
     updateQueueActions();
@@ -1113,7 +1162,7 @@ Editor::Editor()
             QStyle::SP_MediaPlay, QStyle::SP_MediaSeekBackward, QStyle::SP_MediaSeekForward,
             QStyle::SP_MediaSkipBackward, QStyle::SP_MediaSkipForward, QStyle::SP_MediaPlay,
             QStyle::SP_DialogSaveButton, QStyle::SP_DialogOpenButton};
-        button->setIcon(style()->standardIcon(icons[binding]));
+        button->setIcon(workspaceIcon(icons[binding], binding == Export));
         row->addWidget(button);
         if (binding == Export) button->setProperty("primary", true);
         connect(button, &QPushButton::clicked, this, fn);
@@ -1125,7 +1174,7 @@ Editor::Editor()
     };
     action(heading, tr("Open"), Open, &Editor::open);
     auto *queueButton = new QPushButton("Clips to Trim");
-    queueButton->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    queueButton->setIcon(workspaceIcon(QStyle::SP_FileDialogDetailedView));
     queueButton->setFocusPolicy(Qt::NoFocus);
     heading->addWidget(queueButton);
     connect(queueButton, &QPushButton::clicked, this, [this]{ showClipQueue(); });

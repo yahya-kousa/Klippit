@@ -101,6 +101,7 @@ class Editor : public QWidget {
     void updateQueueActions();
     void setupHome();
     void refreshHome();
+    void sizeRecentRows();
     void markDone();
     void trashClips(QList<ClipQueue::Entry> clips, bool completed, QWidget *parent);
     void open();

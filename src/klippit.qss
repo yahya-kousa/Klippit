@@ -170,3 +170,13 @@ QHeaderView::section {
     border-bottom: 1px solid #46545f;
     padding: 5px 8px;
 }
+
+QPushButton#homeQueue {
+    border-radius: 12px;
+    padding: 2px 8px;
+    color: palette(link);
+}
+QListWidget#recentClips::item {
+    border-bottom: 1px solid palette(mid);
+    padding: 6px 0;
+}
