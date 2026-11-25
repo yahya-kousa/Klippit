@@ -35,6 +35,8 @@ std::function<void(QSettings &)> createSaveFoldersPage(QWidget &page)
 {
     const auto previous = saveFolders();
     auto *form = new QFormLayout(&page);
+    form->setContentsMargins(18, 16, 18, 16);
+    form->setVerticalSpacing(8);
     const auto addFolder = [&](const QString &label, const QString &path, const QString &fallback) {
         auto *field = new QLineEdit(path, &page);
         field->setReadOnly(true);
@@ -80,6 +82,7 @@ std::function<void(QSettings &)> createSaveFoldersPage(QWidget &page)
     apps->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     apps->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
     apps->verticalHeader()->hide();
+    apps->verticalHeader()->setDefaultSectionSize(36);
     QString last;
     for (const auto &name : known) {
         if (name.compare(last, Qt::CaseInsensitive) == 0 ||

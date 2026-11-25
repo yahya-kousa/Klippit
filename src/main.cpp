@@ -1,4 +1,5 @@
 #include "Editor.h"
+#include "AppStyle.h"
 #include <QApplication>
 #include <QTimer>
 #include <QWindow>
@@ -74,6 +75,7 @@ int main(int argc, char **argv)
 #endif
 
     QApplication app(argc, argv);
+    applyAppStyle(app);
 #ifdef Q_OS_WIN
     // A deployed copy can keep its FFmpeg tools beside the executables.
     const auto appFolder = QDir::toNativeSeparators(QCoreApplication::applicationDirPath());

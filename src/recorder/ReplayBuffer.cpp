@@ -13,6 +13,8 @@
 #include <utility>
 
 namespace {
+constexpr qint64 writerQueueLimit = 512 * 1024;
+
 // Video is mapped first. Use the first traf (video clock) for each keyframe-aligned fragment.
 std::optional<qint64> decodeTime(QByteArrayView boxes)
 {
@@ -37,7 +39,15 @@ std::optional<qint64> decodeTime(QByteArrayView boxes)
 Replay::Replay(QString path, qint64 maxHistoryBytes, int historySeconds, ClipQueue clipQueue)
     : queue(std::move(clipQueue)), firstPath(std::move(path)), byteLimit(maxHistoryBytes),
       historyTicks(historySeconds * replayTimescale)
-{}
+{
+    QObject::connect(&writer, &QProcess::bytesWritten, &writer, [this] { feedWriter(); });
+    QObject::connect(&writer, &QProcess::errorOccurred, &writer, [this](QProcess::ProcessError error) {
+        if (error == QProcess::WriteError && !saves.empty()) {
+            saves.front().inputComplete = false;
+            writer.kill();
+        }
+    });
+}
 
 bool Replay::ingest(const QByteArray &chunk)
 {
@@ -184,7 +194,7 @@ void Replay::writeNext()
     const QString dir = stage.path();
     const auto connection = QObject::connect(&writer, &QProcess::finished, &writer,
         [this, path, temp, dir](int code, QProcess::ExitStatus status){
-            const bool published = status == QProcess::NormalExit && code == 0 && QFile::rename(temp, path);
+            const bool published = saves.front().inputComplete && status == QProcess::NormalExit && code == 0 && QFile::rename(temp, path);
             if (!published) QFile::remove(temp);
             QDir().rmdir(dir);
             finishSave(published, path);
@@ -200,15 +210,40 @@ void Replay::writeNext()
         return;
     }
     stage.setAutoRemove(false);
-    auto &snapshot = saves.front();
-    QElapsedTimer enqueueTimer;
-    enqueueTimer.start();
-    writer.write(header);
-    snapshot.peakWriterBytes = writer.bytesToWrite();
-    for (const auto &fragment : snapshot.fragments) {
-        writer.write(fragment);
-        snapshot.peakWriterBytes = qMax(snapshot.peakWriterBytes, writer.bytesToWrite());
+    // QByteArray shares the initialization segment with the recorder until either changes.
+    saves.front().fragments.prepend(header);
+    feedWriter();
+}
+
+void Replay::feedWriter()
+{
+    if (saves.empty() || writer.state() != QProcess::Running) return;
+    auto &save = saves.front();
+    if (save.inputComplete || save.fragments.isEmpty()) return;
+
+    QElapsedTimer timer;
+    timer.start();
+    while (save.nextPart < save.fragments.size()) {
+        const QByteArray &part = save.fragments.at(save.nextPart);
+        const qint64 remaining = part.size() - save.partOffset;
+        if (remaining > 0) {
+            const qint64 capacity = writerQueueLimit - writer.bytesToWrite();
+            if (capacity <= 0) break;
+            const qint64 written = writer.write(part.constData() + save.partOffset, qMin(capacity, remaining));
+            if (written <= 0) {
+                writer.kill();
+                return;
+            }
+            save.partOffset += written;
+            save.peakWriterBytes = qMax(save.peakWriterBytes, writer.bytesToWrite());
+            if (save.partOffset < part.size()) continue;
+        }
+        ++save.nextPart;
+        save.partOffset = 0;
     }
-    snapshot.enqueueNs = enqueueTimer.nsecsElapsed();
-    writer.closeWriteChannel();
+    save.enqueueNs += timer.nsecsElapsed();
+    if (save.nextPart == save.fragments.size()) {
+        save.inputComplete = true;
+        writer.closeWriteChannel();
+    }
 }

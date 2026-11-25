@@ -14,6 +14,7 @@
 #include <optional>
 #include <vector>
 
+class QListWidget;
 class FrameCanvas;
 class TimelineSlider;
 class ClipMarkers;
@@ -78,8 +79,10 @@ class Editor : public QWidget {
     QWidget *homePage;
     QWidget *editPage;
     QLabel *replayStatus = nullptr;
-    QToolButton *startReplay = nullptr;
-    QToolButton *stopReplay = nullptr;
+    QPushButton *startReplay = nullptr;
+    QPushButton *stopReplay = nullptr;
+    QListWidget *recent = nullptr;
+    int layoutScale = 0;
     QPushButton *homeQueue = nullptr;
     QPushButton *resumeEditing = nullptr;
     std::optional<ClipQueue::Entry> queueEntry;
@@ -98,6 +101,7 @@ class Editor : public QWidget {
     void updateQueueActions();
     void setupHome();
     void refreshHome();
+    void sizeRecentRows();
     void markDone();
     void trashClips(QList<ClipQueue::Entry> clips, bool completed, QWidget *parent);
     void open();
@@ -114,6 +118,7 @@ class Editor : public QWidget {
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
     bool event(QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 
 public:

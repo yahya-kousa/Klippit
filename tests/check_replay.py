@@ -29,10 +29,11 @@ with tempfile.TemporaryDirectory() as tmp:
         assert [event["event"] for event in events] == ["clip_saved", "clip_saved"], events
         assert all(event["queued"] for event in events), events
         for event in events:
-            assert event["fragment_bytes"] > 0 and event["peak_writer_queue_bytes"] >= 0
+            assert event["fragment_bytes"] > 0 and 0 < event["peak_writer_queue_bytes"] <= 512 * 1024
             assert event["enqueue_ns"] >= 0 and event["snapshot_to_publish_ms"] >= 0
         assert events[0]["last_fragment_ms"] < events[1]["first_fragment_ms"]
         if history == 60:
+            assert events[0]["fragment_bytes"] > 512 * 1024
             assert [event["app"] for event in events] == ["Longshot", "Brave"]
             first = directory / "Ocarina of Time" / first.name
         assert Path(events[0]["path"]) == first
