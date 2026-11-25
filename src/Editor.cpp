@@ -1,4 +1,5 @@
 #include "Editor.h"
+#include "AppStyle.h"
 #include "SaveFolders.h"
 #ifdef Q_OS_WIN
 #include "ReplaySettings.h"
@@ -97,6 +98,7 @@ void Editor::openFile(const QString &file)
     }
     if (probe.isOpen()) probe.readAllStandardOutput();
     keysUs.clear();
+    markers->load(file, keysUs);
     videoPacketTimesUs.clear();
     edited = previewing = false;
     startUs = endUs = 0;
@@ -207,8 +209,14 @@ void Editor::showClipQueue()
     queueHeading->setProperty("heading", "section");
     queueHeader->addWidget(queueHeading);
     queueHeader->addStretch();
-    auto *completed = new QCheckBox("Show completed");
-    auto *list = new QListWidget;
+    auto *filters = new QTabBar;
+    filters->setDrawBase(false);
+    filters->addTab(tr("Pending"));
+    filters->addTab(tr("Completed"));
+    auto *list = new QTreeWidget;
+    list->setRootIsDecorated(false);
+    list->setHeaderLabels({tr("Replay file"), tr("Folder"), tr("Saved")});
+    list->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     list->setSelectionMode(QAbstractItemView::ExtendedSelection);
     auto *message = new QLabel;
     message->setWordWrap(true);
@@ -219,7 +227,7 @@ void Editor::showClipQueue()
     auto *remove = buttons->addButton("Remove from queue", QDialogButtonBox::ActionRole);
     remove->setToolTip("Forget this queue entry and keep any files on disk.");
     openClip->setProperty("primary", true);
-    queueHeader->addWidget(completed);
+    queueHeader->addWidget(filters);
     layout->addLayout(queueHeader);
     layout->addWidget(list);
     layout->addWidget(message);
@@ -229,7 +237,7 @@ void Editor::showClipQueue()
     QString selectedPath;
     auto selectedEntries = [&] {
         QList<ClipQueue::Entry> selected;
-        for (auto *item : list->selectedItems()) selected.append(entries.at(list->row(item)));
+        for (auto *item : list->selectedItems()) selected.append(entries.at(list->indexOfTopLevelItem(item)));
         return selected;
     };
     auto updateButtons = [&] {
@@ -239,7 +247,7 @@ void Editor::showClipQueue()
         openClip->setEnabled(selected.size() == 1 && available == 1);
         trash->setEnabled(!selected.isEmpty() && available == selected.size());
         trash->setText(selected.size() > 1 ? tr("Trash %1 originals…").arg(selected.size()) : tr("Trash original…"));
-        remove->setEnabled(!selected.isEmpty() && (completed->isChecked() || available == 0));
+        remove->setEnabled(!selected.isEmpty() && ((filters->currentIndex() == 1) || available == 0));
         changeState->setEnabled(selected.size() == 1);
     };
     bool selectFirst = true;
@@ -249,23 +257,23 @@ void Editor::showClipQueue()
         const QSignalBlocker blocked(list);
         list->clear();
         bool readError = false;
-        entries = queue.entries(completed->isChecked(), &readError);
+        entries = queue.entries((filters->currentIndex() == 1), &readError);
         for (int i = 0; i < entries.size(); ++i) {
             const auto &entry = entries.at(i);
-            QString label = QFileInfo(entry.path).fileName() + "   ·   " +
-                QLocale().toString(entry.savedAt.toLocalTime(), QLocale::ShortFormat);
+            QString label = QFileInfo(entry.path).fileName();
             if (!QFileInfo(entry.path).isFile()) label += "   ·   File missing";
-            auto *item = new QListWidgetItem(label, list);
-            item->setToolTip(entry.path);
+            auto *item = new QTreeWidgetItem(list, {label, QFileInfo(entry.path).dir().dirName(),
+                QLocale().toString(entry.savedAt.toLocalTime(), QLocale::ShortFormat)});
+            item->setToolTip(0, entry.path);
             if (selectedIds.contains(entry.id)) item->setSelected(true);
         }
         queue.markSeen(entries);
-        if (selectFirst && !entries.isEmpty()) list->setCurrentRow(0);
+        if (selectFirst && !entries.isEmpty()) list->setCurrentItem(list->topLevelItem(0));
         selectFirst = false;
-        changeState->setText(completed->isChecked() ? "Move Back to Queue" : "Mark Done");
+        changeState->setText((filters->currentIndex() == 1) ? "Move Back to Queue" : "Mark Done");
         if (readError) message->setText("Some queue entries could not be read.");
         else if (entries.isEmpty())
-            message->setText(completed->isChecked() ? "No completed clips." : "No clips waiting to be trimmed.");
+            message->setText((filters->currentIndex() == 1) ? "No completed clips." : "No clips waiting to be trimmed.");
         else message->clear();
         updateButtons();
     };
@@ -282,20 +290,20 @@ void Editor::showClipQueue()
         dialog.accept();
     };
 
-    connect(completed, &QCheckBox::toggled, &dialog, [&] { selectFirst = true; refreshQueue(); });
-    connect(list, &QListWidget::itemSelectionChanged, &dialog, updateButtons);
-    connect(list, &QListWidget::itemDoubleClicked, &dialog, openSelected);
+    connect(filters, &QTabBar::currentChanged, &dialog, [&] { selectFirst = true; refreshQueue(); });
+    connect(list, &QTreeWidget::itemSelectionChanged, &dialog, updateButtons);
+    connect(list, &QTreeWidget::itemDoubleClicked, &dialog, openSelected);
     connect(openClip, &QPushButton::clicked, &dialog, openSelected);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     connect(changeState, &QPushButton::clicked, &dialog, [&] {
         const auto selected = selectedEntries();
         if (selected.size() != 1) return;
-        const bool changed = queue.setCompleted(selected.first(), !completed->isChecked());
+        const bool changed = queue.setCompleted(selected.first(), !(filters->currentIndex() == 1));
         refreshQueue();
         if (!changed) message->setText("Could not update this clip's queue status.");
     });
     connect(remove, &QPushButton::clicked, &dialog, [&] {
-        const bool done = completed->isChecked();
+        const bool done = (filters->currentIndex() == 1);
         QStringList failed;
         for (const auto &entry : selectedEntries()) {
             if ((!done && QFileInfo(entry.path).isFile()) || !queue.removeEntry(entry, done))
@@ -306,7 +314,7 @@ void Editor::showClipQueue()
             QMessageBox::warning(&dialog, "Queue entries kept", failed.join('\n'));
     });
     connect(trash, &QPushButton::clicked, &dialog, [&] {
-        trashClips(selectedEntries(), completed->isChecked(), &dialog);
+        trashClips(selectedEntries(), (filters->currentIndex() == 1), &dialog);
         refreshQueue();
     });
     QFileSystemWatcher watcher;
@@ -660,10 +668,6 @@ void Editor::setupHome()
     layout->setContentsMargins(28, 28, 28, 28);
     layout->setSpacing(24);
 
-    auto *heading = new QLabel(tr("Klippit"));
-    heading->setProperty("heading", "hero");
-    layout->addWidget(heading);
-
     auto *panels = new QHBoxLayout;
     panels->setSpacing(16);
     layout->addLayout(panels);
@@ -675,11 +679,15 @@ void Editor::setupHome()
     clipControls->setSpacing(10);
     auto *clipsHeading = new QLabel(tr("Clip library"));
     clipsHeading->setProperty("heading", "section");
-    clipControls->addWidget(clipsHeading);
+    auto *libraryHeader = new QHBoxLayout;
+    libraryHeader->addWidget(clipsHeading, 1);
+    clipControls->addLayout(libraryHeader);
     homeQueue = new QPushButton;
     homeQueue->setObjectName("homeQueue");
     connect(homeQueue, &QPushButton::clicked, this, &Editor::showClipQueue);
-    clipControls->addWidget(homeQueue);
+    libraryHeader->addWidget(homeQueue);
+    clipControls->addWidget(new QLabel(tr("Trim queued clips or open a file")));
+    clipControls->addStretch();
     auto *clipActions = new QHBoxLayout;
     auto *openFileButton = new QPushButton(tr("Open file…"));
     connect(openFileButton, &QPushButton::clicked, this, &Editor::open);
@@ -687,10 +695,9 @@ void Editor::setupHome()
     connect(resumeEditing, &QPushButton::clicked, this, [this] { pages->setCurrentWidget(editPage); });
     clipActions->addWidget(openFileButton);
     clipActions->addWidget(resumeEditing);
-    clipActions->addStretch();
+
     clipControls->addLayout(clipActions);
-    clipControls->addStretch();
-    panels->addWidget(clipsPanel, 3);
+    panels->addWidget(clipsPanel, 1);
 
     auto *replayPanel = new QFrame;
     replayPanel->setProperty("panel", true);
@@ -711,12 +718,20 @@ void Editor::setupHome()
     for (auto *button : {startReplay, stopReplay}) {
         button->setToolButtonStyle(Qt::ToolButtonTextOnly);
         button->hide();
+        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         replayControls->addWidget(button);
     }
-    replayControls->addStretch();
-    replayLayout->addLayout(replayControls);
     replayLayout->addStretch();
-    panels->addWidget(replayPanel, 2);
+    replayLayout->addLayout(replayControls);
+    panels->addWidget(replayPanel, 1);
+    recent = new QListWidget;
+    recent->setAccessibleName(tr("Recent queued clips"));
+    layout->addWidget(recent);
+    connect(recent, &QListWidget::itemActivated, this, [this](QListWidgetItem *item) {
+        const auto path = item->data(Qt::UserRole).toString();
+        if (QFileInfo::exists(path)) openFile(path);
+        else showClipQueue();
+    });
     layout->addStretch();
 
     auto *watcher = new QFileSystemWatcher(this);
@@ -731,7 +746,17 @@ void Editor::refreshHome()
     const auto pending = ClipQueue().entries(false);
     const bool hasNewClips = std::any_of(pending.begin(), pending.end(),
                                          [](const ClipQueue::Entry &entry) { return entry.unseen; });
-    homeQueue->setText(tr("Clips to Trim (%1)").arg(pending.size()));
+    homeQueue->setText(tr("%1 to trim").arg(pending.size()));
+    recent->clear();
+    for (const auto &entry : pending.mid(0, 3)) {
+        auto *item = new QListWidgetItem(QFileInfo(entry.path).fileName() + "    ·    " +
+            entry.savedAt.toLocalTime().toString("HH:mm:ss"), recent);
+        item->setData(Qt::UserRole, entry.path);
+        item->setToolTip(entry.path);
+    }
+    if (recent->count())
+        recent->setFixedHeight(recent->count() * recent->sizeHintForRow(0) + 2 * recent->frameWidth());
+    recent->setVisible(!pending.isEmpty());
     const auto description = hasNewClips ? tr("New clips are ready to trim.") : QString();
     homeQueue->setToolTip(description);
     homeQueue->setAccessibleDescription(description);
@@ -789,23 +814,34 @@ void Editor::showSettings()
     auto *heading = new QLabel(tr("Settings"));
     heading->setProperty("heading", "section");
     layout->addWidget(heading);
-    auto *tabs = new QTabWidget;
-    layout->addWidget(tabs);
+    auto *body = new QHBoxLayout;
+    layout->addLayout(body, 1);
+    auto *sidebar = new QListWidget;
+    sidebar->setFixedWidth(150);
+    body->addWidget(sidebar);
+    auto *tabs = new QStackedWidget;
+    body->addWidget(tabs, 1);
+    connect(sidebar, &QListWidget::currentRowChanged, tabs, &QStackedWidget::setCurrentIndex);
+    connect(tabs, &QStackedWidget::currentChanged, sidebar, qOverload<int>(&QListWidget::setCurrentRow));
+    auto addPage = [&](QWidget *page, const QString &name) {
+        sidebar->addItem(name);
+        tabs->addWidget(page);
+    };
 #ifdef Q_OS_WIN
     SaveReplaySettings saveReplay;
     QWidget *replayPage = nullptr;
     if (replayHotkeyChanged) {
         replayPage = new QWidget;
-        tabs->addTab(replayPage, tr("Replay"));
+        addPage(replayPage, tr("Replay"));
         saveReplay = createReplaySettingsPage(*replayPage);
     }
 #endif
     auto *folders = new QWidget;
-    tabs->addTab(folders, tr("Save folders"));
+    addPage(folders, tr("Save folders"));
     const auto saveFoldersPage = createSaveFoldersPage(*folders);
 
     auto *shortcutPage = new QWidget;
-    tabs->addTab(shortcutPage, tr("Editor shortcuts"));
+    addPage(shortcutPage, tr("Editor shortcuts"));
     auto *form = new QFormLayout(shortcutPage);
     form->setContentsMargins(18, 16, 18, 16);
     form->setVerticalSpacing(8);
@@ -832,6 +868,13 @@ void Editor::showSettings()
         for (int i = 0; i < ShortcutCount; ++i) fields[i]->setKeySequence(defaults[i]);
         message->clear();
     });
+    auto *themePage = new QWidget;
+    auto *themeForm = new QFormLayout(themePage);
+    auto *theme = new QComboBox;
+    theme->addItems({"Lily Pond", "Nord", "Tokyo Night", "Catppuccin Mocha"});
+    theme->setCurrentText(QSettings("Klippit","Klippit").value("appearance/theme","Lily Pond").toString());
+    themeForm->addRow(tr("Color theme"), theme);
+    addPage(themePage, tr("Themes"));
     QString newHotkey;
     connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
         Shortcuts chosen;
@@ -860,11 +903,13 @@ void Editor::showSettings()
 #endif
         saveFoldersPage(settings);
         settings.setValue("editor/shortcuts", stored);
+        settings.setValue("appearance/theme", theme->currentText());
         settings.sync();
         if (settings.status() != QSettings::NoError) {
             message->setText(tr("Could not save settings."));
             return;
         }
+        applyAppStyle(*qApp);
         shortcuts = chosen;
         applyShortcuts();
         dialog.accept();
@@ -895,6 +940,12 @@ Editor::Editor()
     auto *navigation = new QHBoxLayout;
     navigation->setContentsMargins(28, 16, 28, 0);
     auto *homeButton = new QPushButton("Back to Home");
+    auto *frog = new QLabel;
+    frog->setPixmap(QPixmap(":/appearance/frog.png").scaled(38,38,Qt::KeepAspectRatio,Qt::SmoothTransformation));
+    navigation->addWidget(frog);
+    auto *brand = new QLabel(tr("Klippit"));
+    brand->setProperty("heading", "section");
+    navigation->addWidget(brand);
     navigation->addWidget(homeButton);
     navigation->addStretch();
     navigation->addWidget(settingsButton);
@@ -905,7 +956,9 @@ Editor::Editor()
     pages->addWidget(homePage);
     pages->addWidget(editPage);
     homeButton->hide();
-    connect(pages, &QStackedWidget::currentChanged, this, [this, homeButton] {
+    connect(pages, &QStackedWidget::currentChanged, this, [this, homeButton, brand, frog] {
+        frog->setVisible(pages->currentWidget() == homePage);
+        brand->setVisible(pages->currentWidget() == homePage);
         homeButton->setVisible(pages->currentWidget() == editPage);
     });
     connect(homeButton, &QPushButton::clicked, this, [this] {
@@ -967,7 +1020,28 @@ Editor::Editor()
     track->addWidget(markers);
     track->addWidget(timeline);
     layout->addLayout(track);
-    layout->addWidget(times);
+    auto *detail = new QHBoxLayout;
+    detail->addWidget(times, 1);
+    detail->addWidget(new QLabel(tr("Zoom")));
+    auto *zoom = new QSlider(Qt::Horizontal);
+    zoom->setAccessibleName(tr("Timeline zoom"));
+    zoom->setRange(1,32);
+    zoom->setFixedWidth(92);
+    detail->addWidget(zoom);
+    connect(zoom, &QSlider::valueChanged, markers, &ClipMarkers::setZoom);
+    connect(markers, &ClipMarkers::zoomChanged, zoom, [zoom](int factor) {
+        QSignalBlocker block(zoom);
+        zoom->setValue(factor);
+    });
+    connect(markers, &ClipMarkers::boundaryMoved, this, [this](bool first, int ms) {
+        if (exporter.isBusy() || endUs <= 0) return;
+        const qint64 us = qint64(ms)*1000;
+        if (first) startUs = std::min(us,endUs-1);
+        else endUs = std::max(us,startUs+1);
+        edited = true;
+        refresh();
+    });
+    layout->addLayout(detail);
     auto *buttons = new QHBoxLayout;
     auto *controls = new QFrame;
     controls->setProperty("panel", true);

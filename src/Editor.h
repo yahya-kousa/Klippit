@@ -14,6 +14,7 @@
 #include <optional>
 #include <vector>
 
+class QListWidget;
 class FrameCanvas;
 class TimelineSlider;
 class ClipMarkers;
@@ -80,6 +81,7 @@ class Editor : public QWidget {
     QLabel *replayStatus = nullptr;
     QToolButton *startReplay = nullptr;
     QToolButton *stopReplay = nullptr;
+    QListWidget *recent;
     QPushButton *homeQueue = nullptr;
     QPushButton *resumeEditing = nullptr;
     std::optional<ClipQueue::Entry> queueEntry;

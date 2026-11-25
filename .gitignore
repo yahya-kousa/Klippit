@@ -7,3 +7,6 @@ CMakeLists.txt.user*
 *.mp4
 *.mkv
 *.mov
+
+# Local design mockups and reference images
+/docs/design/
