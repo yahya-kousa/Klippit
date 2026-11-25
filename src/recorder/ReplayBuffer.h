@@ -27,6 +27,9 @@ private:
     struct Save {
         QString folder, app;
         QList<QByteArray> fragments;
+        qsizetype nextPart = 0;
+        qsizetype partOffset = 0;
+        bool inputComplete = false;
         QElapsedTimer timer;
         QElapsedTimer readyTimer;
         qint64 peakWriterBytes = 0;
@@ -37,6 +40,7 @@ private:
     };
     void queueSave();
     void writeNext();
+    void feedWriter();
     void finishSave(bool success, const QString &path);
     void report(const char *event, const QString &detail);
 

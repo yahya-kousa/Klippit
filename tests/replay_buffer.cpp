@@ -2,7 +2,8 @@
 #include "ReplayAppFolders.h"
 #include <QCoreApplication>
 #include <QFile>
-#include <QThread>
+#include <QEventLoop>
+#include <QTimer>
 #include <QTemporaryDir>
 #include <QtEndian>
 
@@ -33,6 +34,16 @@ int main(int argc, char **argv)
     const int first = app.arguments()[5].toInt();
     const int second = app.arguments()[6].toInt();
     const bool overlapWrites = app.arguments()[7] == "overlap";
+    auto waitForSaves = [&] {
+        if (!replay.saving()) return;
+        QEventLoop loop;
+        QTimer monitor;
+        QObject::connect(&monitor, &QTimer::timeout, &loop, [&] {
+            if (!replay.saving()) loop.quit();
+        });
+        monitor.start(1);
+        loop.exec();
+    };
     int fragments = 0;
     while (!input.atEnd()) {
         const auto header = input.read(8);
@@ -43,7 +54,7 @@ int main(int argc, char **argv)
             if (fragments == second) {
                 if (!replay.saving()) return 1;
                 if (!overlapWrites) {
-                    while (replay.saving()) { app.processEvents(); QThread::msleep(1); }
+                    waitForSaves();
                 }
             }
             if (app.arguments()[4] == "60") {
@@ -55,7 +66,7 @@ int main(int argc, char **argv)
         }
         if (!replay.ingest(input.read(size - 8))) return 1;
     }
-    while (replay.saving()) { app.processEvents(); QThread::msleep(1); }
+    waitForSaves();
     if (fragments < second) return 1;
 
     // Reopen the on-disk queue independently of the recorder instance.
