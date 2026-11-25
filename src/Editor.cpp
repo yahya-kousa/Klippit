@@ -52,6 +52,26 @@ static QIcon workspaceIcon(QStyle::StandardPixmap symbol, bool filled = false)
             case QStyle::SP_MediaStop:
                 painter.drawRoundedRect(QRectF(3,3,18,18),2,2);
                 break;
+            case QStyle::SP_FileDialogDetailedView:
+                for (const int y : {5,11,17}) {
+                    painter.drawEllipse(QRectF(2,y,3,3));
+                    painter.drawRoundedRect(QRectF(8,y,14,3),1,1);
+                }
+                break;
+            case QStyle::SP_TrashIcon:
+                painter.drawRoundedRect(QRectF(4,5,16,2),1,1);
+                painter.drawRoundedRect(QRectF(9,2,6,2),1,1);
+                painter.setBrush(Qt::NoBrush);
+                painter.setPen(QPen(ink,2));
+                painter.drawRoundedRect(QRectF(6,9,12,12),2,2);
+                break;
+            case QStyle::SP_DialogSaveButton:
+                painter.setBrush(Qt::NoBrush);
+                painter.setPen(QPen(ink,2.2,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));
+                painter.drawPolyline(QPolygonF{{3,15},{3,21},{21,21},{21,15}});
+                painter.drawLine(QPointF(12,15),QPointF(12,3));
+                painter.drawPolyline(QPolygonF{{7,8},{12,3},{17,8}});
+                break;
             default:
                 painter.setRenderHint(QPainter::SmoothPixmapTransform);
                 painter.drawPixmap(QRect(1,1,22,22),source.pixmap(size,size));
@@ -64,6 +84,50 @@ static QIcon workspaceIcon(QStyle::StandardPixmap symbol, bool filled = false)
     }
     return result;
 }
+
+// Utility windows size their controls from their own available space.
+static void styleWorkspace(QWidget *page, int availableWidth)
+{
+    const int pt = std::clamp(availableWidth / 130 + 5, 10, 14);
+    if (page->property("workspacePointSize").toInt() == pt) return;
+    page->setProperty("workspacePointSize", pt);
+    page->setStyleSheet(QStringLiteral(
+        "QWidget { font-size: %1pt; }"
+        "QLabel[heading=section] { font-size: %2pt; font-weight: 650; }"
+        "QPushButton,QToolButton { padding: %3px %4px; }"
+        "QTreeView::item { padding: %3px 5px; }"
+        "QHeaderView::section { padding: %3px 5px; }")
+        .arg(pt).arg(pt + 4).arg(pt/2).arg(pt));
+    const QSize iconSize(pt + 6, pt + 6);
+    for (auto *button : page->findChildren<QAbstractButton *>()) button->setIconSize(iconSize);
+    for (auto *view : page->findChildren<QAbstractItemView *>()) view->setIconSize(iconSize);
+}
+
+class FilenameLabel : public QLabel {
+public:
+    using QLabel::QLabel;
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setPen(palette().windowText().color());
+        painter.drawText(contentsRect(), Qt::AlignLeft | Qt::AlignVCenter,
+                         fontMetrics().elidedText(text(), Qt::ElideMiddle, contentsRect().width()));
+    }
+};
+
+class WorkspaceDialog : public QDialog {
+public:
+    using QDialog::QDialog;
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QDialog::resizeEvent(event);
+        styleWorkspace(this, width());
+        if (auto *sidebar = findChild<QListWidget *>("settingsSections"))
+            sidebar->setFixedWidth(sidebar->sizeHintForColumn(0) + 24);
+    }
+};
 
 class FrameCanvas : public QWidget {
 public:
@@ -249,7 +313,7 @@ void Editor::showClipQueue()
         status->setText("Could not open the Clips to Trim folder.");
         return;
     }
-    QDialog dialog(this);
+    WorkspaceDialog dialog(this);
     dialog.setWindowTitle("Clips to Trim");
     dialog.resize(740, 440);
     auto *layout = new QVBoxLayout(&dialog);
@@ -266,10 +330,14 @@ void Editor::showClipQueue()
     filters->addTab(tr("Completed"));
     auto *list = new QTreeWidget;
     list->setRootIsDecorated(false);
+    list->setUniformRowHeights(true);
+    list->header()->setStretchLastSection(false);
+    list->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
     list->setHeaderLabels({tr("Replay file"), tr("Folder"), tr("Saved")});
     list->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     list->setSelectionMode(QAbstractItemView::ExtendedSelection);
     auto *message = new QLabel;
+    message->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
     message->setWordWrap(true);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
     auto *openClip = buttons->addButton("Open Clip", QDialogButtonBox::AcceptRole);
@@ -283,7 +351,7 @@ void Editor::showClipQueue()
     openClip->setProperty("primary", true);
     queueHeader->addWidget(filters);
     layout->addLayout(queueHeader);
-    layout->addWidget(list);
+    layout->addWidget(list, 1);
     layout->addWidget(message);
     layout->addWidget(buttons);
 
@@ -730,13 +798,14 @@ void Editor::resizeEvent(QResizeEvent *event)
     QWidget::resizeEvent(event);
     const double ratio = std::min(width()/690.0, height()/400.0);
     const int step = std::clamp(int(ratio * 8), 8, 20);
+    styleWorkspace(editPage, width());
     if (step == layoutScale) return;
     layoutScale = step;
     const double scale = step / 8.0;
     auto bodyFont = QApplication::font();
     bodyFont.setPointSizeF(bodyFont.pointSizeF() * scale);
-    setFont(bodyFont);
-    setStyleSheet(QStringLiteral(
+    homePage->setFont(bodyFont);
+    homePage->setStyleSheet(QStringLiteral(
         "QLabel, QPushButton, QToolButton, QListWidget { font-size: %1pt; }"
         "QPushButton, QToolButton { padding: %2px %3px; }")
         .arg(bodyFont.pointSizeF()).arg(qRound(8 * scale)).arg(qRound(9 * scale)));
@@ -749,12 +818,13 @@ void Editor::resizeEvent(QResizeEvent *event)
         panel->layout()->setContentsMargins(inset,inset,inset,inset);
         panel->layout()->setSpacing(qRound(12*scale));
     }
-    for (auto *heading : findChildren<QLabel *>()) {
+    for (auto *heading : homePage->findChildren<QLabel *>()) {
         if (heading->property("heading") == "section")
             heading->setStyleSheet(QStringLiteral("font-size: %1pt").arg(qRound(16 * scale)));
     }
+    findChild<QLabel *>("homeBrand")->setStyleSheet(QStringLiteral("font-size: %1pt").arg(qRound(16 * scale)));
     const int iconSize = qRound(16 * scale);
-    for (auto *button : findChildren<QAbstractButton *>())
+    for (auto *button : homePage->findChildren<QAbstractButton *>())
         button->setIconSize(QSize(iconSize, iconSize));
     auto scaleIcon = [&](const char *name, const QIcon &icon, int logicalSize) {
         if (auto *label = findChild<QLabel *>(name)) {
@@ -948,7 +1018,7 @@ void Editor::showSettings()
 {
     if (!settingsButton->isEnabled() || QApplication::activeModalWidget()) return;
     finishHold();
-    QDialog dialog(this);
+    WorkspaceDialog dialog(this);
     dialog.setWindowTitle(tr("Settings"));
     auto *layout = new QVBoxLayout(&dialog);
     layout->setContentsMargins(20, 18, 20, 18);
@@ -959,7 +1029,8 @@ void Editor::showSettings()
     auto *body = new QHBoxLayout;
     layout->addLayout(body, 1);
     auto *sidebar = new QListWidget;
-    sidebar->setFixedWidth(150);
+    sidebar->setObjectName("settingsSections");
+    sidebar->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     body->addWidget(sidebar);
     auto *tabs = new QStackedWidget;
     body->addWidget(tabs, 1);
@@ -997,6 +1068,7 @@ void Editor::showSettings()
         form->addRow(labels[i], fields[i]);
     }
     auto *message = new QLabel;
+    message->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
     message->setWordWrap(true);
     layout->addWidget(message);
     auto *restoreDefaults = new QPushButton(tr("Restore shortcut defaults"));
@@ -1064,7 +1136,7 @@ void Editor::showSettings()
 Editor::Editor()
     : timeline(new TimelineSlider),
       markers(new ClipMarkers(timeline)),
-      title(new QLabel("Open a replay")),
+      title(new FilenameLabel("Open a replay")),
       times(new QLabel),
       status(new QLabel),
       markDoneButton(new QPushButton("Mark done")),
@@ -1088,6 +1160,7 @@ Editor::Editor()
     frog->setPixmap(QPixmap(":/appearance/frog.png").scaled(38,38,Qt::KeepAspectRatio,Qt::SmoothTransformation));
     navigation->addWidget(frog);
     auto *brand = new QLabel(tr("Klippit"));
+    brand->setObjectName("homeBrand");
     brand->setProperty("heading", "section");
     navigation->addWidget(brand);
     navigation->addWidget(homeButton);
