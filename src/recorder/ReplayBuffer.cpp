@@ -102,6 +102,7 @@ void Replay::request(const QString &folder, const QString &app)
     requestedFolder = folder;
     requestedApp = app;
     requestTimer.start();
+    report("clip_requested", QStringLiteral("Waiting for the next video fragment."));
 }
 
 void Replay::queueSave()

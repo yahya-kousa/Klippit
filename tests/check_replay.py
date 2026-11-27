@@ -26,7 +26,12 @@ with tempfile.TemporaryDirectory() as tmp:
         run = subprocess.run([sys.argv[1], source, first, str(limit), str(history),
                               *map(str, ends), "serial" if limit == 200_000 else "overlap"], check=True, capture_output=True, text=True)
         events = [json.loads(line) for line in run.stdout.splitlines()]
-        assert [event["event"] for event in events] == ["clip_saved", "clip_saved"], events
+        event_names = [event["event"] for event in events]
+        assert event_names in [
+            ["clip_requested", "clip_saved", "clip_requested", "clip_saved"],
+            ["clip_requested", "clip_requested", "clip_saved", "clip_saved"],
+        ], events
+        events = [event for event in events if event["event"] == "clip_saved"]
         assert all(event["queued"] for event in events), events
         for event in events:
             assert event["fragment_bytes"] > 0 and 0 < event["peak_writer_queue_bytes"] <= 512 * 1024

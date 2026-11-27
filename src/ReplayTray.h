@@ -44,6 +44,7 @@ private:
     QProcess recorder;
     QMenu menu;
     QSystemTrayIcon tray;
+    QSoundEffect clipRequestedSound;
     QSoundEffect clipSavedSound;
     QAction *status;
     QAction *startAction;

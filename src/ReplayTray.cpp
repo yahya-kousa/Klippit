@@ -64,13 +64,15 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
         start();
     });
     QSettings soundSettings("Klippit", "Klippit");
-    auto *soundAction = menu.addAction("Clip saved sound");
+    auto *soundAction = menu.addAction("Clip sounds");
     soundAction->setCheckable(true);
     soundAction->setChecked(soundSettings.value("replay/clipSavedSound", true).toBool());
     connect(soundAction, &QAction::toggled, this, [](bool enabled) {
         QSettings settings("Klippit", "Klippit");
         settings.setValue("replay/clipSavedSound", enabled);
     });
+    clipRequestedSound.setVolume(0.35f);
+    clipRequestedSound.setSource(QUrl("qrc:/sounds/clip-requested.wav"));
     clipSavedSound.setVolume(0.55f);
     clipSavedSound.setSource(QUrl("qrc:/sounds/ribbit.wav"));
     configureStartup();
@@ -108,7 +110,9 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
                     finishHotkeyUpdate(event["detail"].toString());
                 }
             }
-            if (name == "clip_saved") {
+            if (name == "clip_requested") {
+                if (soundAction->isChecked()) clipRequestedSound.play();
+            } else if (name == "clip_saved") {
                 const QFileInfo saved(event["path"].toString());
                 const auto app = event.value("app").toString(saved.dir().dirName());
                 if (!app.isEmpty() && app.compare("Desktop", Qt::CaseInsensitive) != 0) {
