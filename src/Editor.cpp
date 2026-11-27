@@ -258,7 +258,7 @@ void Editor::updateQueueActions()
         }
     }
     markDoneButton->setVisible(queueEntry.has_value() && !clipCompleted);
-    trashButton->setVisible(queueEntry.has_value());
+    trashButton->setVisible(QFileInfo(source).isFile());
 }
 
 void Editor::markDone()
@@ -276,9 +276,9 @@ void Editor::trashClips(QList<ClipQueue::Entry> clips, bool completed, QWidget *
     QStringList paths;
     for (const auto &entry : clips) paths.append(QDir::toNativeSeparators(entry.path));
     const QString prompt = clips.size() == 1
-        ? tr("Move this original replay to the trash?\n%1").arg(paths.first())
+        ? tr("Move this video file to the trash?\n%1").arg(paths.first())
         : tr("Move %1 selected original replays to the trash?").arg(clips.size());
-    QMessageBox confirm(QMessageBox::Question, "Trash original replays?", prompt,
+    QMessageBox confirm(QMessageBox::Question, tr("Move to trash?"), prompt,
                         QMessageBox::Yes | QMessageBox::Cancel, parent);
     confirm.setTextFormat(Qt::PlainText);
     confirm.setInformativeText("Exported trims will be kept.");
@@ -289,16 +289,20 @@ void Editor::trashClips(QList<ClipQueue::Entry> clips, bool completed, QWidget *
     const ClipQueue queue;
     QStringList errors;
     for (const auto &entry : clips) {
+        if (!QFileInfo(entry.path).isFile()) {
+            errors.append(tr("%1 could not be found as a file.").arg(entry.path));
+            continue;
+        }
         const bool isOpen = !source.isEmpty() && QFileInfo(entry.path) == QFileInfo(source);
         if (isOpen) openFile({}); // Release player and probe handles before moving the file.
         QFile original(entry.path);
         if (!original.moveToTrash()) {
             if (isOpen) openFile(entry.path);
             errors.append(entry.path + " — " + original.errorString());
-        } else if (!queue.removeEntry(entry, completed)) {
+        } else if (!entry.id.isEmpty() && !queue.removeEntry(entry, completed)) {
             errors.append(entry.path + " — moved to trash, but the queue entry could not be removed.");
         } else if (isOpen) {
-            status->setText("Original replay moved to the trash.");
+            status->setText(tr("Video moved to the trash."));
         }
     }
     if (!errors.isEmpty()) QMessageBox::warning(parent, "Some clips need attention", errors.join('\n'));
@@ -1226,7 +1230,13 @@ Editor::Editor()
     updateQueueActions();
     connect(markDoneButton, &QPushButton::clicked, this, &Editor::markDone);
     connect(trashButton, &QPushButton::clicked, this, [this] {
-        if (queueEntry) trashClips({*queueEntry}, clipCompleted, this);
+        if (source.isEmpty()) return;
+        if (queueEntry) {
+            trashClips({*queueEntry}, clipCompleted, this);
+        } else {
+            // A video opened outside the queue has no queue record to remove.
+            trashClips({ClipQueue::Entry{.path = source}}, false, this);
+        }
     });
     previewStack = new QStackedWidget;
     frameCanvas = new FrameCanvas;
