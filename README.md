@@ -1,4 +1,4 @@
-# Klippit
+# <img src="src/frog.png" width="40" height="40" alt=""> Klippit
 
 Klippit is a keyboard-driven desktop app for trimming gameplay recordings without re-encoding. Open a replay, mark a highlight, and save it as a new MP4 or MKV. The original recording stays intact, and trimming requires no hardware encoder.
 

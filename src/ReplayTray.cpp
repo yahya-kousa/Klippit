@@ -15,7 +15,6 @@
 #include <QJsonObject>
 #include <QMessageBox>
 #include <QSettings>
-#include <QStyle>
 #include <QTimer>
 #include <QUuid>
 #include <iterator>
@@ -174,7 +173,7 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
         args->flags |= CREATE_NO_WINDOW;
     });
 #endif
-    tray.setIcon(QApplication::style()->standardIcon(QStyle::SP_MediaPlay));
+    tray.setIcon(QApplication::windowIcon());
     tray.setContextMenu(&menu);
     tray.show();
 }
