@@ -190,9 +190,16 @@ void Editor::refresh()
 void Editor::open()
 {
     if (exporter.isBusy()) return;
-    auto file = QFileDialog::getOpenFileName(this, "Open replay", {},
+    QSettings settings("Klippit", "Klippit");
+    const auto folderKey = QStringLiteral("editor/lastOpenFolder");
+    QString folder = settings.value(folderKey).toString();
+    if (!QFileInfo(folder).isDir() && !source.isEmpty())
+        folder = QFileInfo(source).absolutePath();
+    const auto file = QFileDialog::getOpenFileName(this, "Open replay", QFileInfo(folder).isDir() ? folder : QString(),
         "Video (*.mp4 *.mkv *.mov);;All files (*)");
-    if (!file.isEmpty()) openFile(file);
+    if (file.isEmpty()) return;
+    settings.setValue(folderKey, QFileInfo(file).absolutePath());
+    openFile(file);
 }
 
 void Editor::openFile(const QString &file)
