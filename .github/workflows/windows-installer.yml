@@ -133,7 +133,7 @@ jobs:
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          ./build-deps/tools/vpk.exe pack --packId Klippit --packVersion $env:PACK_VERSION --mainExe klippit.exe --runtime win-x64 --packDir out/app --outputDir out/installer
+          ./build-deps/tools/vpk.exe pack --packId Klippit --packVersion $env:PACK_VERSION --mainExe klippit.exe --icon src/klippit.ico --runtime win-x64 --packDir out/app --outputDir out/installer
           $feed = Get-Content out/installer/releases.win.json -Raw | ConvertFrom-Json
           $full = @($feed.Assets | Where-Object Type -eq Full)
           if ($full.Count -ne 1 -or $full[0].Version -ne $env:PACK_VERSION -or !(Test-Path -LiteralPath (Join-Path out/installer $full[0].FileName))) {

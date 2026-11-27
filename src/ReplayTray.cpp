@@ -15,7 +15,6 @@
 #include <QJsonObject>
 #include <QMessageBox>
 #include <QSettings>
-#include <QStyle>
 #include <QTimer>
 #include <QUuid>
 #include <iterator>
@@ -64,6 +63,16 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
         ++recoveryAttempts;
         start();
     });
+    QSettings soundSettings("Klippit", "Klippit");
+    auto *soundAction = menu.addAction("Clip saved sound");
+    soundAction->setCheckable(true);
+    soundAction->setChecked(soundSettings.value("replay/clipSavedSound", true).toBool());
+    connect(soundAction, &QAction::toggled, this, [](bool enabled) {
+        QSettings settings("Klippit", "Klippit");
+        settings.setValue("replay/clipSavedSound", enabled);
+    });
+    clipSavedSound.setVolume(0.55f);
+    clipSavedSound.setSource(QUrl("qrc:/sounds/ribbit.wav"));
     configureStartup();
 #ifdef KLIPPIT_PACKAGED
     configureUpdates();
@@ -78,7 +87,7 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
     connect(&tray, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger) showEditor();
     });
-    connect(&recorder, &QProcess::readyReadStandardOutput, this, [this] {
+    connect(&recorder, &QProcess::readyReadStandardOutput, this, [this, soundAction] {
         while (recorder.canReadLine()) {
             const auto event = QJsonDocument::fromJson(recorder.readLine()).object();
             const auto name = event["event"].toString();
@@ -113,6 +122,7 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
                 const auto file = saved.fileName();
                 const auto message = event["queued"].toBool() ? file + " added to Clips to Trim."
                                                               : file + " saved. Open it manually.";
+                if (soundAction->isChecked()) clipSavedSound.play();
                 tray.showMessage("Clip saved", message);
             } else if (name == "clip_failed" || name == "clip_rejected") {
 #ifdef KLIPPIT_PACKAGED
@@ -174,7 +184,7 @@ ReplayTray::ReplayTray(Editor &editor) : editor(editor)
         args->flags |= CREATE_NO_WINDOW;
     });
 #endif
-    tray.setIcon(QApplication::style()->standardIcon(QStyle::SP_MediaPlay));
+    tray.setIcon(QApplication::windowIcon());
     tray.setContextMenu(&menu);
     tray.show();
 }

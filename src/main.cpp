@@ -1,6 +1,7 @@
 #include "Editor.h"
 #include "AppStyle.h"
 #include <QApplication>
+#include <QIcon>
 #include <QTimer>
 #include <QWindow>
 #include <cstdio>
@@ -75,6 +76,7 @@ int main(int argc, char **argv)
 #endif
 
     QApplication app(argc, argv);
+    app.setWindowIcon(QIcon(":/appearance/frog.png"));
     applyAppStyle(app);
 #ifdef Q_OS_WIN
     // A deployed copy can keep its FFmpeg tools beside the executables.

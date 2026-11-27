@@ -3,6 +3,7 @@
 #include <QAbstractNativeEventFilter>
 #include <QMenu>
 #include <QProcess>
+#include <QSoundEffect>
 #include <QSystemTrayIcon>
 #include <QTimer>
 
@@ -43,6 +44,7 @@ private:
     QProcess recorder;
     QMenu menu;
     QSystemTrayIcon tray;
+    QSoundEffect clipSavedSound;
     QAction *status;
     QAction *startAction;
     QAction *stopAction;
