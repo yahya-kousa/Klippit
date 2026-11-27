@@ -5,11 +5,14 @@
 #include <QTimer>
 #include <QWindow>
 #include <cstdio>
-#include <iterator>
 #ifdef Q_OS_WIN
 #include "ReplayTray.h"
 #include <QDir>
 #include <QFileInfo>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QElapsedTimer>
+#include <iterator>
 #include <QThread>
 #include <QScopeGuard>
 #include <windows.h>
@@ -19,9 +22,15 @@
 #endif
 
 namespace {
-constexpr wchar_t launchWindowClass[] = L"Klippit.LaunchReceiver";
-constexpr ULONG_PTR openFileMessage = 1;
-constexpr qsizetype maxPathLength = 32767;
+constexpr qint64 maxLaunchBytes = 128 * 1024;
+constexpr int launchTimeoutMs = 3000;
+
+QString launchEndpoint()
+{
+    DWORD session = 0;
+    ProcessIdToSessionId(GetCurrentProcessId(), &session);
+    return QStringLiteral("Klippit.Launch.%1").arg(session);
+}
 
 #ifdef KLIPPIT_PACKAGED
 constexpr auto openWithKey = "HKEY_CURRENT_USER\\Software\\Classes\\Applications\\klippit.exe";
@@ -52,63 +61,69 @@ void unregisterOpenWith(void *, const char *)
 
 bool forwardLaunch(const QString &path)
 {
-    if (path.size() > maxPathLength) return false;
-    HWND target = nullptr;
-    for (int attempt = 0; attempt < 40 && !target; ++attempt) {
-        target = FindWindowExW(HWND_MESSAGE, nullptr, launchWindowClass, nullptr);
-        if (!target) QThread::msleep(50);
-    }
-    if (!target) return false;
-    DWORD editorProcess = 0;
-    GetWindowThreadProcessId(target, &editorProcess);
-    if (editorProcess) AllowSetForegroundWindow(editorProcess);
+    const QByteArray request = path.toUtf8() + '\n';
+    if (request.size() > maxLaunchBytes) return false;
 
-    // An empty payload requests activation without changing the open clip.
-    COPYDATASTRUCT data{openFileMessage, DWORD(path.size() * sizeof(char16_t)),
-                        const_cast<void *>(static_cast<const void *>(path.utf16()))};
-    DWORD_PTR accepted = 0;
-    return SendMessageTimeoutW(target, WM_COPYDATA, 0, reinterpret_cast<LPARAM>(&data),
-                               SMTO_ABORTIFHUNG | SMTO_BLOCK, 2000, &accepted) && accepted;
+    QLocalSocket socket;
+    QElapsedTimer elapsed;
+    elapsed.start();
+    do {
+        socket.connectToServer(launchEndpoint());
+        if (socket.waitForConnected(100)) break;
+        socket.abort();
+        QThread::msleep(50);
+    } while (elapsed.elapsed() < launchTimeoutMs);
+    if (socket.state() != QLocalSocket::ConnectedState) return false;
+
+    // The launcher can transfer Explorer's foreground permission to the editor.
+    ULONG serverProcess = 0;
+    if (GetNamedPipeServerProcessId(reinterpret_cast<HANDLE>(socket.socketDescriptor()), &serverProcess))
+        AllowSetForegroundWindow(serverProcess);
+
+    if (socket.write(request) != request.size()) return false;
+    while (socket.bytesToWrite() && socket.waitForBytesWritten(launchTimeoutMs)) {}
+    if (socket.bytesToWrite()) return false;
+    if (!socket.bytesAvailable() && !socket.waitForReadyRead(launchTimeoutMs)) return false;
+    return socket.read(1) == "1";
 }
 
-LRESULT CALLBACK receiveLaunch(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+void receiveLaunch(QLocalSocket &socket, Editor &editor)
 {
-    if (message == WM_NCCREATE) {
-        const auto *creation = reinterpret_cast<const CREATESTRUCTW *>(lParam);
-        SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(creation->lpCreateParams));
+    if (!socket.canReadLine()) {
+        if (socket.bytesAvailable() >= maxLaunchBytes) socket.abort();
+        return;
     }
-    if (message != WM_COPYDATA)
-        return DefWindowProcW(window, message, wParam, lParam);
 
-    auto *editor = reinterpret_cast<Editor *>(GetWindowLongPtrW(window, GWLP_USERDATA));
-    const auto *data = reinterpret_cast<const COPYDATASTRUCT *>(lParam);
-    if (!editor || !data || data->dwData != openFileMessage ||
-        data->cbData > maxPathLength * sizeof(char16_t) ||
-        data->cbData % sizeof(char16_t) || (data->cbData && !data->lpData))
-        return FALSE;
+    const QByteArray request = socket.readLine(maxLaunchBytes + 1);
+    if (!request.endsWith('\n') || request.contains('\0')) {
+        socket.abort();
+        return;
+    }
+    const QString path = QString::fromUtf8(request.chopped(1));
+    socket.write("1", 1);
+    socket.disconnectFromServer();
 
-    const auto path = data->cbData
-        ? QString::fromUtf16(static_cast<const char16_t *>(data->lpData),
-                             data->cbData / sizeof(char16_t))
-        : QString();
-    if (path.contains(QChar(u'\0'))) return FALSE;
-    QTimer::singleShot(0, editor, [editor, path] {
-        if (path.isEmpty()) editor->showAndActivate();
-        else editor->openExternalFile(path);
+    QTimer::singleShot(0, &editor, [&editor, path] {
+        if (path.isEmpty()) editor.showAndActivate();
+        else editor.openExternalFile(path);
     });
-    return TRUE;
 }
 
-HWND createLaunchReceiver(Editor &editor)
+bool listenForLaunches(QLocalServer &server, Editor &editor)
 {
-    const auto module = GetModuleHandleW(nullptr);
-    WNDCLASSW windowClass{};
-    windowClass.lpfnWndProc = receiveLaunch;
-    windowClass.hInstance = module;
-    windowClass.lpszClassName = launchWindowClass;
-    if (!RegisterClassW(&windowClass)) return nullptr;
-    return CreateWindowExW(0, launchWindowClass, L"", 0, 0, 0, 0, 0,
-                           HWND_MESSAGE, nullptr, module, &editor);
+    server.setSocketOptions(QLocalServer::UserAccessOption);
+    QObject::connect(&server, &QLocalServer::newConnection, &editor, [&] {
+        while (auto *socket = server.nextPendingConnection()) {
+            socket->setReadBufferSize(maxLaunchBytes);
+            QObject::connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
+            QTimer::singleShot(launchTimeoutMs, socket, [socket] { socket->abort(); });
+            QObject::connect(socket, &QLocalSocket::readyRead, &editor, [socket, &editor] {
+                receiveLaunch(*socket, editor);
+            });
+            receiveLaunch(*socket, editor);
+        }
+    });
+    return server.listen(launchEndpoint());
 }
 }
 #endif
@@ -177,14 +192,12 @@ int main(int argc, char **argv)
     if (smoke) std::fputs("Qt application initialized\n", stderr);
     Editor editor;
 #ifdef Q_OS_WIN
-    // The receiver stays alive when the editor window is closed to the tray.
-    const HWND launchReceiver = createLaunchReceiver(editor);
-    if (!launchReceiver) {
+    QLocalServer launchServer;
+    if (!listenForLaunches(launchServer, editor)) {
         if (!smoke) MessageBoxW(nullptr, L"Could not initialize Klippit's launch receiver.",
                                 L"Klippit", MB_OK | MB_ICONERROR);
         return 1;
     }
-    const auto destroyReceiver = qScopeGuard([launchReceiver] { DestroyWindow(launchReceiver); });
     ReplayTray replayTray(editor);
     if (!signIn || !replayTray.isAvailable()) editor.show();
     if (!file.isEmpty()) editor.openExternalFile(file);
