@@ -753,6 +753,17 @@ void Editor::closeEvent(QCloseEvent *event)
     }
 }
 
+void Editor::openExternalFile(const QString &file)
+{
+    showAndActivate();
+    if (QApplication::activeModalWidget()) return;
+    if (exporter.isBusy()) {
+        QMessageBox::information(this, "Open video", "Wait for the current export to finish, then open the video again.");
+        return;
+    }
+    if (QFileInfo(file).isFile()) openFile(file);
+}
+
 void Editor::showAndActivate()
 {
     if (isMinimized()) showNormal();

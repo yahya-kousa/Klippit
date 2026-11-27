@@ -54,7 +54,7 @@ endif()
 
 if(WIN32)
     target_sources(klippit PRIVATE src/ReplayTray.cpp src/ReplayTray.h src/ReplaySettings.cpp src/ReplaySettings.h)
-    target_link_libraries(klippit PRIVATE user32 wtsapi32)
+    target_link_libraries(klippit PRIVATE user32 wtsapi32 shell32)
     target_sources(klippit PRIVATE src/klippit.rc)
     qt_add_resources(klippit replay_sounds PREFIX "/sounds" BASE src FILES src/ribbit.wav)
     add_executable(klippit-record src/recorder/main.cpp src/recorder/Loopback.cpp src/recorder/Replay.cpp src/recorder/ReplayBuffer.cpp src/ClipQueue.cpp)
