@@ -32,6 +32,16 @@ ClipExporter::ClipExporter(QObject *parent) : QObject(parent)
     });
 }
 
+QString ClipExporter::availableStem(const QString &base, bool mkvOnly)
+{
+    QString candidate = base;
+    for (int number = 2; QFileInfo::exists(candidate + ".mkv") ||
+                         (!mkvOnly && QFileInfo::exists(candidate + ".mp4")); ++number) {
+        candidate = base + '-' + QString::number(number);
+    }
+    return candidate;
+}
+
 bool ClipExporter::isBusy() const
 {
     return bool(staging);

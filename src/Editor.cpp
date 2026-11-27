@@ -740,7 +740,8 @@ void Editor::saveClip(const QString &suggestedName, bool mkvOnly)
     const QString mkvFilter = "Matroska (*.mkv)";
     QString selected = mkvOnly ? mkvFilter : mp4Filter;
     const QString filters = mkvOnly ? mkvFilter : mp4Filter + ";;" + mkvFilter;
-    destination = QFileDialog::getSaveFileName(this, "Export clip", suggestedName, filters, &selected);
+    const auto available = ClipExporter::availableStem(suggestedName, mkvOnly);
+    destination = QFileDialog::getSaveFileName(this, "Export clip", available, filters, &selected);
     if (destination.isEmpty()) return;
     const bool mp4 = selected == mp4Filter;
     const QString suffix = mp4 ? ".mp4" : ".mkv";
