@@ -73,6 +73,7 @@ class Editor : public QWidget {
     QLabel *status;
     QPushButton *markDoneButton;
     QPushButton *trashButton;
+    QPushButton *closeClipButton;
     QPushButton *settingsButton;
     std::function<void(const QString &)> replayHotkeyChanged;
     QStackedWidget *pages;
