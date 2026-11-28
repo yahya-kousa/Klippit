@@ -227,6 +227,7 @@ void Editor::openFile(const QString &file)
     timeline->setRange(0, 0);
     updateQueueActions();
     resumeEditing->setEnabled(!file.isEmpty());
+    closeClipButton->setVisible(!file.isEmpty());
     if (file.isEmpty()) {
         player.setSource({});
         title->setText("Open a replay");
@@ -1164,6 +1165,7 @@ Editor::Editor()
       status(new QLabel),
       markDoneButton(new QPushButton("Mark done")),
       trashButton(new QPushButton("Trash original…")),
+      closeClipButton(new QPushButton(tr("Close clip"))),
       settingsButton(new QPushButton(tr("Settings…"))),
       pages(new QStackedWidget(this)),
       homePage(new QWidget),
@@ -1187,6 +1189,15 @@ Editor::Editor()
     brand->setProperty("heading", "section");
     navigation->addWidget(brand);
     navigation->addWidget(homeButton);
+    closeClipButton->hide();
+    closeClipButton->setToolTip(tr("Release the video file and clear its trim marks"));
+    navigation->addWidget(closeClipButton);
+    connect(closeClipButton, &QPushButton::clicked, this, [this] {
+        if (exporter.isBusy() || source.isEmpty()) return;
+        openFile({});
+        refreshHome();
+        pages->setCurrentWidget(homePage);
+    });
     navigation->addStretch();
     settingsButton->setText(QStringLiteral("⚙"));
     settingsButton->setAccessibleName(tr("Settings"));
@@ -1485,6 +1496,7 @@ Editor::Editor()
         status->setText(message);
         markDoneButton->setEnabled(!exporter.isBusy());
         trashButton->setEnabled(!exporter.isBusy());
+        closeClipButton->setEnabled(!exporter.isBusy());
     });
     connect(&exporter, &ClipExporter::mp4Unsupported, this, [this]{
         QMessageBox box(QMessageBox::Information, "MP4 cannot carry this track",
