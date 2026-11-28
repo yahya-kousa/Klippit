@@ -16,6 +16,8 @@ Klippit is open source under the [GNU General Public License version 3](LICENSE)
 
 ## Trim a clip
 
+On Windows, right-click an MP4, MOV, or MKV in File Explorer and choose **Open with → Klippit**.
+
 | Action | Control |
 | --- | --- |
 | Open an MKV, MP4, or MOV recording | Open button or Ctrl+O (⌘O on macOS) |

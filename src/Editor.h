@@ -129,4 +129,5 @@ public:
     void setReplayActions(QAction *state, QAction *start, QAction *stop);
     void showClipQueue();
     void showAndActivate();
+    void openExternalFile(const QString &file);
 };

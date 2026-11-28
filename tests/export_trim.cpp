@@ -2,6 +2,7 @@
 #include "TrimRange.h"
 #include <QCoreApplication>
 #include <QDebug>
+#include <QFile>
 #include <QTimer>
 
 int main(int argc, char **argv)
@@ -22,6 +23,18 @@ int main(int argc, char **argv)
     const auto stepped = losslessRange({0, 16667}, 16667, 33333);
     if (!stepped || stepped->startUs != 16667 || stepped->durationUs != 16666) {
         qCritical() << "Frame timestamp lost precision";
+        return 1;
+    }
+    QTemporaryDir trims;
+    if (!trims.isValid()) return 1;
+    const QString base = trims.filePath("match-trim");
+    if (ClipExporter::availableStem(base, false) != base ||
+        !QFile(base + ".mp4").open(QIODevice::WriteOnly) ||
+        ClipExporter::availableStem(base, true) != base ||
+        ClipExporter::availableStem(base, false) != base + "-2" ||
+        !QFile(base + "-2.mkv").open(QIODevice::WriteOnly) ||
+        ClipExporter::availableStem(base, false) != base + "-3") {
+        qCritical() << "Unexpected suggested trim filename";
         return 1;
     }
     ClipExporter exporter;
